@@ -1,0 +1,532 @@
+﻿* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    color: #222;
+    line-height: 1.4;
+}
+
+button,
+input {
+    font: inherit;
+}
+
+button {
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+
+/* =========================
+   HEADER
+========================= */
+
+.app-header {
+    background: #1f6feb;
+    color: white;
+    padding: 22px 20px;
+    text-align: center;
+}
+
+.app-header h1 {
+    font-size: 30px;
+    margin-bottom: 4px;
+}
+
+.app-header p {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+
+/* =========================
+   MAIN CONTAINER
+========================= */
+
+.container {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+
+/* =========================
+   COMMON SECTIONS
+========================= */
+
+.user-section,
+.list-section,
+.location-section,
+.members-section,
+.market {
+    background: white;
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+}
+
+.user-section h2,
+.list-section h2,
+.members-section h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+}
+
+
+/* =========================
+   INPUT ROWS
+========================= */
+
+.user-row,
+.list-name-row,
+.location-row {
+    display: grid;
+    grid-template-columns: 1fr 90px;
+    gap: 10px;
+    align-items: stretch;
+}
+
+input {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid #ccd3da;
+    border-radius: 8px;
+    background: white;
+    font-size: 16px;
+    outline: none;
+}
+
+input:focus {
+    border-color: #1f6feb;
+    box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.12);
+}
+
+
+/* =========================
+   SAVE BUTTONS
+========================= */
+
+.user-row button,
+.list-name-row button,
+.location-row button {
+    width: 90px;
+    min-height: 44px;
+    background: #1f6feb;
+    color: white;
+    font-weight: 600;
+}
+
+.user-row button:hover,
+.list-name-row button:hover,
+.location-row button:hover {
+    background: #185abc;
+}
+
+
+/* =========================
+   DISPLAY TEXT
+========================= */
+
+.user-display,
+.owner-display,
+.location-display {
+    margin-top: 10px;
+    font-weight: 600;
+    color: #1f6feb;
+}
+
+
+/* =========================
+   MEMBERS
+========================= */
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.section-header p {
+    color: #777;
+    font-size: 13px;
+}
+
+.invite-button {
+    background: #2e7d32;
+    color: white;
+    padding: 10px 14px;
+    white-space: nowrap;
+}
+
+.member-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.member-item:last-child {
+    border-bottom: none;
+}
+
+.member-role {
+    font-size: 13px;
+    color: #777;
+}
+
+
+/* =========================
+   MARKET
+========================= */
+
+.market-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.market-header h2 {
+    font-size: 20px;
+}
+
+.delete-market {
+    background: #ffeded;
+    color: #c62828;
+    padding: 8px 12px;
+}
+
+
+/* =========================
+   PRODUCTS
+========================= */
+
+.product-list {
+    list-style: none;
+}
+
+.product-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 7px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.product-item:last-child {
+    border-bottom: none;
+}
+
+.status-button {
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    background: transparent;
+    font-size: 21px;
+}
+
+.status-button:hover {
+    background: #f0f3f6;
+}
+
+.product-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 6px 4px;
+    border-radius: 6px;
+}
+
+.product-name:hover {
+    background: #f4f6f8;
+}
+
+.product-name.completed {
+    text-decoration: line-through;
+    color: #888;
+}
+
+.product-name.not-found {
+    color: #c62828;
+    font-weight: 600;
+}
+.status-button.purchased,
+.product-name.purchased {
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.status-button.not-found,
+.product-name.not-found {
+    background: #ffebee;
+    color: #c62828;
+    font-weight: 600;
+}
+
+
+.delete-product {
+    flex: 0 0 38px;
+    width: 38px;
+    height: 34px;
+    padding: 0;
+    background: transparent;
+    color: #c62828;
+    font-size: 17px;
+}
+
+.delete-product:hover {
+    background: #ffeded;
+}
+
+
+/* =========================
+   PRODUCT EDIT
+========================= */
+
+.edit-product-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 40px;
+}
+
+.save-product-button,
+.cancel-product-button {
+    min-height: 40px;
+    padding: 8px 11px;
+    white-space: nowrap;
+}
+
+.save-product-button {
+    background: #2e7d32;
+    color: white;
+}
+
+.cancel-product-button {
+    background: #eeeeee;
+    color: #333;
+}
+
+
+/* =========================
+   ADD PRODUCT
+========================= */
+
+.add-product-row {
+    display: grid;
+    grid-template-columns: 1fr 90px;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.add-product-row button {
+    width: 90px;
+    min-height: 44px;
+    background: #2e7d32;
+    color: white;
+    font-weight: 600;
+}
+
+
+/* =========================
+   ADD MARKET
+========================= */
+
+.add-market-button {
+    width: 100%;
+    min-height: 48px;
+    background: #1f6feb;
+    color: white;
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+
+/* =========================
+   EMPTY STATES
+========================= */
+
+.empty-message,
+.empty-markets {
+    color: #888;
+    font-size: 14px;
+    padding: 5px 0;
+}
+
+
+/* =========================
+   MOBILE
+========================= */
+
+@media (max-width: 520px) {
+
+    .container {
+        padding: 12px;
+    }
+
+    .app-header {
+        padding: 18px 14px;
+    }
+
+    .app-header h1 {
+        font-size: 27px;
+    }
+
+    .user-section,
+    .list-section,
+    .location-section,
+    .members-section,
+    .market {
+        padding: 15px;
+        border-radius: 12px;
+    }
+
+    .user-row,
+    .list-name-row,
+    .location-row,
+    .add-product-row {
+        grid-template-columns: 1fr;
+    }
+
+    .user-row button,
+    .list-name-row button,
+    .location-row button,
+    .add-product-row button {
+        width: 100%;
+    }
+
+    .section-header {
+        align-items: flex-start;
+    }
+
+    .invite-button {
+        padding: 9px 11px;
+    }
+
+    .market-header {
+        align-items: flex-start;
+    }
+
+    .market-header h2 {
+        font-size: 18px;
+    }
+
+    .delete-market {
+        padding: 7px 10px;
+    }
+
+    .product-item {
+        gap: 6px;
+    }
+
+    .product-name {
+        font-size: 15px;
+    }
+
+    .edit-product-input {
+        width: 100%;
+    }
+
+    .save-product-button,
+    .cancel-product-button {
+        padding: 8px 9px;
+    }
+
+}
+/* =========================
+   ADD MARKET FORM
+========================= */
+
+.add-market-form {
+    margin-top: 10px;
+    padding: 14px;
+    background: #f8fafc;
+    border: 1px solid #e1e6eb;
+    border-radius: 10px;
+}
+
+.add-market-form input {
+    width: 100%;
+    min-height: 44px;
+}
+
+.add-market-form-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.save-market-button,
+.cancel-market-button {
+    min-height: 44px;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+.save-market-button {
+    background: #2e7d32;
+    color: white;
+}
+
+.cancel-market-button {
+    background: #eeeeee;
+    color: #333;
+}
+
+.save-market-button:hover {
+    background: #256628;
+}
+
+.cancel-market-button:hover {
+    background: #dddddd;
+}
+
+/* =========================
+   STATUS BUTTON FIX
+========================= */
+
+.status-button {
+    flex: 0 0 85px;
+    width: 85px;
+    height: 38px;
+    padding: 0 6px;
+    background: transparent;
+    font-size: 13px;
+    white-space: nowrap;
+    text-align: center;
+}
+
+.status-button:hover {
+    background: #f0f3f6;
+}
+
+.status-button.purchased,
+.product-name.purchased {
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.status-button.not-found,
+.product-name.not-found {
+    background: #ffebee;
+    color: #c62828;
+    font-weight: 600;
+}

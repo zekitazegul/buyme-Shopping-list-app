@@ -1,0 +1,177 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="theme-color" content="#1f6feb">
+
+    <title>BuyMe - Shared Shopping List</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header class="app-header">
+    <div>
+        <h1>BuyMe</h1>
+        <p>Shared shopping list</p>
+    </div>
+</header>
+
+<main class="container">
+
+    <!-- USER -->
+    <section class="user-section">
+
+        <h2>User</h2>
+
+        <div class="user-row">
+
+            <input
+                type="text"
+                id="usernameInput"
+                placeholder="Enter your username"
+            >
+
+            <button id="saveUsernameButton">
+                Save
+            </button>
+
+        </div>
+
+        <p id="usernameDisplay" class="user-display"></p>
+
+    </section>
+
+
+    <!-- LIST -->
+    <section class="list-section">
+
+        <h2>Shopping List</h2>
+
+        <div class="list-name-row">
+
+            <input
+                type="text"
+                id="listNameInput"
+                placeholder="e.g. Weekly Shopping"
+            >
+
+            <button id="saveListNameButton">
+                Save
+            </button>
+
+        </div>
+
+        <p id="listOwnerDisplay" class="owner-display"></p>
+
+    </section>
+
+
+    <!-- LOCATION -->
+    <section class="location-section">
+
+        <label for="locationInput">
+            Location
+        </label>
+
+        <div class="location-row">
+
+            <input
+                type="text"
+                id="locationInput"
+                placeholder="e.g. Hoogvliet"
+            >
+
+            <button id="saveLocationButton">
+                Save
+            </button>
+
+        </div>
+
+        <p id="locationDisplay" class="location-display"></p>
+
+    </section>
+
+
+    <!-- MEMBERS -->
+    <section class="members-section">
+
+        <div class="section-header">
+
+            <div>
+                <h2>Members</h2>
+                <p>People who can use this list</p>
+            </div>
+
+            <button
+                id="inviteButton"
+                class="invite-button">
+                + Invite
+            </button>
+
+        </div>
+
+        <div id="membersContainer"></div>
+
+    </section>
+
+
+    <!-- MARKETS -->
+    <section id="marketsContainer">
+        <!-- Markets will be added here -->
+    </section>
+
+
+    <!-- ADD MARKET -->
+    <section class="add-market-section">
+
+        <button
+            id="addMarketButton"
+            class="add-market-button"
+            type="button">
+            + Add Market
+        </button>
+
+        <div
+            id="addMarketForm"
+            class="add-market-form"
+            style="display: none;">
+
+            <input
+                type="text"
+                id="marketNameInput"
+                placeholder="Enter market name"
+            >
+
+            <div class="add-market-form-buttons">
+
+                <button
+                    id="saveMarketButton"
+                    type="button"
+                    class="save-market-button">
+                    Save
+                </button>
+
+                <button
+                    id="cancelMarketButton"
+                    type="button"
+                    class="cancel-market-button">
+                    Cancel
+                </button>
+
+            </div>
+
+        </div>
+
+    </section>
+
+</main>
+
+<script src="app.js"></script>
+
+</body>
+</html>
+
