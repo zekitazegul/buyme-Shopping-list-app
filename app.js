@@ -1,6 +1,16 @@
-﻿const STORAGE_KEY = "buymeData";
+const SUPABASE_URL = "https://zacxjtrajywysvkdnftg.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_lYd0L6LFdgG_Ha4V0ZC5Gg_g-sSFIIk";
+
+const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY
+);
+
+console.log("BuyMe: Supabase client initialized.");
+const STORAGE_KEY = "buymeData";
 
 const defaultData = {
+    listId: "",
     username: "",
     listName: "My Shopping List",
     owner: "",
@@ -23,6 +33,21 @@ const saveUsernameButton =
 
 const usernameDisplay =
     document.getElementById("usernameDisplay");
+
+const emailInput =
+    document.getElementById("emailInput");
+
+const passwordInput =
+    document.getElementById("passwordInput");
+
+const loginButton =
+    document.getElementById("loginButton");
+
+const logoutButton =
+    document.getElementById("logoutButton");
+
+const authStatus =
+    document.getElementById("authStatus");
 
 const listNameInput =
     document.getElementById("listNameInput");
@@ -97,6 +122,11 @@ function normalizeData(rawData) {
             : [];
 
     return {
+        listId:
+            typeof safeData.listId === "string"
+                ? safeData.listId
+                : "",
+
         username:
             typeof safeData.username === "string"
                 ? safeData.username
@@ -214,9 +244,178 @@ function saveData() {
 }
 
 
+async function createSupabaseList() {
+    if (data.listId) {
+        return data.listId;
+    }
+
+    const listName =
+        data.listName.trim() ||
+        "My Shopping List";
+
+    if (!data.username) {
+        console.error(
+            "Cannot create Supabase shopping list: username is missing."
+        );
+
+        return null;
+    }
+
+    const { data: profile, error: profileError } =
+        await supabaseClient
+            .from("profiles")
+            .select("id")
+            .eq("username", data.username)
+            .single();
+
+    if (profileError) {
+        console.error(
+            "Could not find Supabase profile:",
+            profileError
+        );
+
+        return null;
+    }
+
+    const { data: createdList, error } =
+        await supabaseClient
+            .from("shopping_lists")
+            .insert({
+                name: listName,
+                owner_id: profile.id
+            })
+            .select("id")
+            .single();
+
+    if (error) {
+        console.error(
+            "Could not create Supabase shopping list:",
+            error
+        );
+
+        return null;
+    }
+
+    data.listId = createdList.id;
+
+    const { error: memberError } =
+        await supabaseClient
+            .from("list_members")
+            .insert({
+                list_id: data.listId,
+                user_id: profile.id,
+                role: "owner"
+            });
+
+    if (memberError) {
+        console.error(
+            "Could not add list owner as member:",
+            memberError
+        );
+
+        return null;
+    }
+
+    saveData();
+
+    console.log(
+        "Supabase shopping list created:",
+        data.listId
+    );
+
+    return data.listId;
+}
+
+
 /* =========================
    USER
 ========================= */
+
+async function loginUser() {
+    const email =
+        emailInput.value.trim();
+
+    const password =
+        passwordInput.value;
+
+    if (!email || !password) {
+        authStatus.textContent =
+            "Please enter your email and password.";
+
+        return;
+    }
+
+    authStatus.textContent =
+        "Logging in...";
+
+    const { error } =
+        await supabaseClient.auth.signInWithPassword({
+            email,
+            password
+        });
+
+    if (error) {
+        console.error(
+            "BuyMe login failed:",
+            error
+        );
+
+        authStatus.textContent =
+            error.message;
+
+        return;
+    }
+
+    authStatus.textContent =
+        "Login successful.";
+
+    await loadSupabaseUser();
+
+    passwordInput.value = "";
+
+    renderAll();
+}
+
+
+async function logoutUser() {
+    const { error } =
+        await supabaseClient.auth.signOut();
+
+    if (error) {
+        console.error(
+            "BuyMe logout failed:",
+            error
+        );
+
+        authStatus.textContent =
+            error.message;
+
+        return;
+    }
+
+    authStatus.textContent =
+        "Logged out.";
+
+    data.username = "";
+    data.owner = "";
+    data.members = [];
+
+    saveData();
+
+    renderAll();
+}
+
+
+loginButton.addEventListener(
+    "click",
+    loginUser
+);
+
+
+logoutButton.addEventListener(
+    "click",
+    logoutUser
+);
 
 saveUsernameButton.addEventListener(
     "click",
@@ -233,6 +432,67 @@ usernameInput.addEventListener(
     }
 );
 
+
+async function loadSupabaseUser() {
+    const {
+        data: { user },
+        error
+    } = await supabaseClient.auth.getUser();
+
+    if (error) {
+        console.error(
+            "Could not get Supabase user:",
+            error
+        );
+
+        return null;
+    }
+
+    if (!user) {
+        console.log(
+            "BuyMe: No Supabase user is currently signed in."
+        );
+
+        return null;
+    }
+
+    const {
+        data: profile,
+        error: profileError
+    } = await supabaseClient
+        .from("profiles")
+        .select("id, username")
+        .eq("id", user.id)
+        .single();
+
+    if (profileError) {
+        console.error(
+            "Could not load Supabase profile:",
+            profileError
+        );
+
+        return null;
+    }
+
+    data.username = profile.username;
+
+    if (!data.owner) {
+        data.owner = profile.username;
+    }
+
+    if (!data.members.includes(profile.username)) {
+        data.members.unshift(profile.username);
+    }
+
+    saveData();
+
+    console.log(
+        "BuyMe: Supabase user loaded:",
+        profile.username
+    );
+
+    return profile;
+}
 
 function saveUsername() {
     const username =
@@ -283,7 +543,7 @@ listNameInput.addEventListener(
 );
 
 
-function saveListName() {
+async function saveListName() {
     const listName =
         listNameInput.value.trim();
 
@@ -300,6 +560,40 @@ function saveListName() {
     data.listName = listName;
 
     saveData();
+
+    const listId = await createSupabaseList();
+
+    if (!listId) {
+        alert("The list could not be saved to Supabase.");
+        return;
+    }
+
+    const { error: updateError } =
+        await supabaseClient
+            .from("shopping_lists")
+            .update({
+                name: listName
+            })
+            .eq("id", listId);
+
+    if (updateError) {
+        console.error(
+            "Could not update Supabase shopping list name:",
+            updateError
+        );
+
+        alert(
+            "The list name could not be updated in Supabase."
+        );
+
+        return;
+    }
+
+    console.log(
+        "Supabase shopping list name updated:",
+        listName
+    );
+
     renderAll();
 }
 
@@ -445,6 +739,159 @@ function cancelMarket() {
 
 
 /* =========================
+   EDIT MARKET
+========================= */
+
+function editMarket(marketId) {
+    const market =
+        data.markets.find(
+            market =>
+                String(market.id) ===
+                String(marketId)
+        );
+
+    if (!market) {
+        return;
+    }
+
+    const marketElement =
+        document.querySelector(
+            `.market[data-market-id="${CSS.escape(
+                String(marketId)
+            )}"]`
+        );
+
+    if (!marketElement) {
+        return;
+    }
+
+    const header =
+        marketElement.querySelector(
+            ".market-header"
+        );
+
+    const heading =
+        marketElement.querySelector(
+            ".market-name"
+        );
+
+    const deleteButton =
+        marketElement.querySelector(
+            ".delete-market"
+        );
+
+    if (!header || !heading) {
+        return;
+    }
+
+    const originalName =
+        market.name;
+
+    heading.outerHTML = `
+        <div class="edit-market-container">
+
+            <input
+                class="edit-market-input"
+                type="text"
+                value="${escapeHtml(originalName)}"
+            >
+
+            <button
+                class="save-market-edit-button"
+                type="button">
+                Save
+            </button>
+
+            <button
+                class="cancel-market-edit-button"
+                type="button">
+                Cancel
+            </button>
+
+        </div>
+    `;
+
+    if (deleteButton) {
+        deleteButton.disabled = true;
+    }
+
+    const editInput =
+        header.querySelector(
+            ".edit-market-input"
+        );
+
+    const saveButton =
+        header.querySelector(
+            ".save-market-edit-button"
+        );
+
+    const cancelButton =
+        header.querySelector(
+            ".cancel-market-edit-button"
+        );
+
+    if (
+        !editInput ||
+        !saveButton ||
+        !cancelButton
+    ) {
+        return;
+    }
+
+    editInput.focus();
+    editInput.select();
+
+    saveButton.addEventListener(
+        "click",
+        () => {
+            const newName =
+                editInput.value.trim();
+
+            if (!newName) {
+                alert(
+                    "Market name cannot be empty."
+                );
+
+                editInput.focus();
+
+                return;
+            }
+
+            market.name =
+                newName;
+
+            saveData();
+            renderAll();
+        }
+    );
+
+    cancelButton.addEventListener(
+        "click",
+        () => {
+            renderAll();
+        }
+    );
+
+    editInput.addEventListener(
+        "keydown",
+        event => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+
+                saveButton.click();
+            }
+
+            if (event.key === "Escape") {
+                event.preventDefault();
+
+                cancelButton.click();
+            }
+        }
+    );
+}
+
+
+/* =========================
    RENDER ALL
 ========================= */
 
@@ -566,7 +1013,10 @@ function renderMarkets() {
             marketElement.innerHTML = `
                 <div class="market-header">
 
-                    <h2>
+                    <h2
+                        class="market-name"
+                        onclick="editMarket('${escapeJsAttribute(market.id)}')"
+                        title="Click to edit">
                         Market: ${escapeHtml(market.name)}
                     </h2>
 
@@ -1148,4 +1598,15 @@ function escapeJsAttribute(value) {
    START
 ========================= */
 
-renderAll();
+async function startApp() {
+    await loadSupabaseUser();
+    renderAll();
+}
+
+startApp();
+
+
+
+
+
+

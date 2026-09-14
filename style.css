@@ -202,11 +202,7 @@ input:focus {
     font-size: 20px;
 }
 
-.delete-market {
-    background: #ffeded;
-    color: #c62828;
-    padding: 8px 12px;
-}
+
 
 
 /* =========================
@@ -280,21 +276,30 @@ input:focus {
 }
 
 
+
+
+
+
+.delete-market,
 .delete-product {
-    flex: 0 0 38px;
-    width: 38px;
+    flex: 0 0 auto;
+    min-width: 64px;
     height: 34px;
-    padding: 0;
-    background: transparent;
-    color: #c62828;
-    font-size: 17px;
-}
-
-.delete-product:hover {
+    padding: 0 10px;
+    box-sizing: border-box;
+    border: 1px solid #f0caca;
+    border-radius: 6px;
     background: #ffeded;
+    color: #c62828;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
 }
 
-
+.delete-market:hover,
+.delete-product:hover {
+    background: #ffdede;
+}
 /* =========================
    PRODUCT EDIT
 ========================= */
@@ -427,10 +432,6 @@ input:focus {
         font-size: 18px;
     }
 
-    .delete-market {
-        padding: 7px 10px;
-    }
-
     .product-item {
         gap: 6px;
     }
@@ -530,3 +531,5 @@ input:focus {
     color: #c62828;
     font-weight: 600;
 }
+
+
