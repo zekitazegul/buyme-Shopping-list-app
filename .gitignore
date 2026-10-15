@@ -1,3 +1,12 @@
-﻿backup-before-v1-hardening/
+backup-before-v1-hardening/
 .vscode/
 *.tmp
+node_modules/
+data/
+test-results/
+playwright-report/
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+backups/

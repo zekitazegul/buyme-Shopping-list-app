@@ -1,1612 +1,365 @@
-const SUPABASE_URL = "https://zacxjtrajywysvkdnftg.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_lYd0L6LFdgG_Ha4V0ZC5Gg_g-sSFIIk";
+'use strict';
+const { normalize, documentOf, Storage, createId, statuses } = window.BuyMeCore;
+const $ = id => document.getElementById(id);
+let browserStorage;
+try { browserStorage = window.localStorage; }
+catch { browserStorage = { getItem() { throw new Error('Storage blocked'); }, setItem() { throw new Error('Storage blocked'); } }; }
+const storage = new Storage(browserStorage, () => {
+    $('storageWarning').hidden = false;
+});
+let data = storage.load(), user = null, cloud = null, cloudLists = [];
+let epoch = 0, generation = 0, saving = false, saveTimer, blocked = false, cloudReady = false, authBusy = false;
+cloud = new window.BuyMeCloud();
+let searchQuery = "", statusFilter = "all";
 
-const supabaseClient = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY
-);
-
-console.log("BuyMe: Supabase client initialized.");
-const STORAGE_KEY = "buymeData";
-
-const defaultData = {
-    listId: "",
-    username: "",
-    listName: "My Shopping List",
-    owner: "",
-    members: [],
-    location: "",
-    markets: []
-};
-
-let data = loadData();
-
-/* =========================
-   ELEMENTS
-========================= */
-
-const usernameInput =
-    document.getElementById("usernameInput");
-
-const saveUsernameButton =
-    document.getElementById("saveUsernameButton");
-
-const usernameDisplay =
-    document.getElementById("usernameDisplay");
-
-const emailInput =
-    document.getElementById("emailInput");
-
-const passwordInput =
-    document.getElementById("passwordInput");
-
-const loginButton =
-    document.getElementById("loginButton");
-
-const logoutButton =
-    document.getElementById("logoutButton");
-
-const authStatus =
-    document.getElementById("authStatus");
-
-const listNameInput =
-    document.getElementById("listNameInput");
-
-const saveListNameButton =
-    document.getElementById("saveListNameButton");
-
-const listOwnerDisplay =
-    document.getElementById("listOwnerDisplay");
-
-const locationInput =
-    document.getElementById("locationInput");
-
-const saveLocationButton =
-    document.getElementById("saveLocationButton");
-
-const locationDisplay =
-    document.getElementById("locationDisplay");
-
-const membersContainer =
-    document.getElementById("membersContainer");
-
-const inviteButton =
-    document.getElementById("inviteButton");
-
-const marketsContainer =
-    document.getElementById("marketsContainer");
-
-const addMarketButton =
-    document.getElementById("addMarketButton");
-
-const addMarketForm =
-    document.getElementById("addMarketForm");
-
-const marketNameInput =
-    document.getElementById("marketNameInput");
-
-const saveMarketButton =
-    document.getElementById("saveMarketButton");
-
-const cancelMarketButton =
-    document.getElementById("cancelMarketButton");
-
-
-/* =========================
-   STORAGE
-========================= */
-
-function createId() {
-    if (
-        window.crypto &&
-        typeof window.crypto.randomUUID === "function"
-    ) {
-        return window.crypto.randomUUID();
-    }
-
-    return `${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 10)}`;
+function announceSession() { try { browserStorage.setItem('buyme:session', String(Date.now())); } catch { /* The session cookie still works. */ } }
+function message(text, error = false) {
+    $('appStatus').textContent = text;
+    $('appStatus').classList.toggle('error', error);
 }
-
-
-function normalizeData(rawData) {
-    const safeData =
-        rawData && typeof rawData === "object"
-            ? rawData
-            : {};
-
-    const markets =
-        Array.isArray(safeData.markets)
-            ? safeData.markets
-            : [];
-
-    return {
-        listId:
-            typeof safeData.listId === "string"
-                ? safeData.listId
-                : "",
-
-        username:
-            typeof safeData.username === "string"
-                ? safeData.username
-                : "",
-
-        listName:
-            typeof safeData.listName === "string" &&
-            safeData.listName.trim()
-                ? safeData.listName
-                : defaultData.listName,
-
-        owner:
-            typeof safeData.owner === "string"
-                ? safeData.owner
-                : "",
-
-        members:
-            Array.isArray(safeData.members)
-                ? safeData.members.filter(
-                    member =>
-                        typeof member === "string" &&
-                        member.trim()
-                )
-                : [],
-
-        location:
-            typeof safeData.location === "string"
-                ? safeData.location
-                : "",
-
-        markets: markets
-            .filter(
-                market =>
-                    market &&
-                    typeof market === "object"
-            )
-            .map(
-                market => ({
-                    id:
-                        market.id ??
-                        createId(),
-
-                    name:
-                        typeof market.name === "string"
-                            ? market.name
-                            : "Unnamed Market",
-
-                    products:
-                        Array.isArray(market.products)
-                            ? market.products
-                                .filter(
-                                    product =>
-                                        product &&
-                                        typeof product === "object"
-                                )
-                                .map(
-                                    product => ({
-                                        id:
-                                            product.id ??
-                                            createId(),
-
-                                        name:
-                                            typeof product.name === "string"
-                                                ? product.name
-                                                : "Unnamed Product",
-
-                                        status:
-                                            [
-                                                "pending",
-                                                "purchased",
-                                                "not_found"
-                                            ].includes(
-                                                product.status
-                                            )
-                                                ? product.status
-                                                : "pending"
-                                    })
-                                )
-                            : []
-                })
-            )
-    };
+function cloudError(error) {
+    if (error?.code === 'CONFLICT') return 'Another member changed this list. Your changes are kept on this device. Export them before loading the latest shared list.';
+    if (error?.code === 'SERVER_UNAVAILABLE') return 'Sharing server is unavailable. Local lists still work. Start the Node server as described in the README.';
+    return 'Cloud action failed. Your local changes are kept. Check your connection and try again.';
 }
-
-
-function loadData() {
-    const savedData =
-        localStorage.getItem(STORAGE_KEY);
-
-    if (!savedData) {
-        return structuredClone(defaultData);
+function persist() { storage.save(data, user?.id); }
+function changed() {
+    generation++;
+    data.dirty = Boolean(user && data.listId);
+    persist(); render();
+    if (data.dirty) {
+        $('syncStatus').textContent = 'Changes saved on this device; waiting to sync.';
+        clearTimeout(saveTimer); saveTimer = setTimeout(sync, 200);
     }
-
+}
+async function sync() {
+    if (!cloud || !cloudReady || !user || !data.listId || !data.dirty || saving || blocked) return;
+    const sessionEpoch = epoch, listId = data.listId;
+    saving = true;
     try {
-        const parsedData =
-            JSON.parse(savedData);
-
-        return normalizeData(parsedData);
+        while (data.dirty && sessionEpoch === epoch && data.listId === listId) {
+            const sentGeneration = generation;
+            const snapshot = JSON.parse(JSON.stringify(documentOf(data)));
+            $('syncStatus').textContent = 'Syncing…';
+            const record = await cloud.save(listId, data.version, snapshot);
+            if (sessionEpoch !== epoch || data.listId !== listId) return;
+            data.version = record.version;
+            data.dirty = generation !== sentGeneration;
+            persist();
+        }
+        if (sessionEpoch === epoch) $('syncStatus').textContent = 'Shared list is up to date.';
     } catch (error) {
-        console.error(
-            "Could not load BuyMe data:",
-            error
-        );
-
-        return structuredClone(defaultData);
-    }
-}
-
-
-function saveData() {
-    localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(data)
-    );
-}
-
-
-async function createSupabaseList() {
-    if (data.listId) {
-        return data.listId;
-    }
-
-    const listName =
-        data.listName.trim() ||
-        "My Shopping List";
-
-    if (!data.username) {
-        console.error(
-            "Cannot create Supabase shopping list: username is missing."
-        );
-
-        return null;
-    }
-
-    const { data: profile, error: profileError } =
-        await supabaseClient
-            .from("profiles")
-            .select("id")
-            .eq("username", data.username)
-            .single();
-
-    if (profileError) {
-        console.error(
-            "Could not find Supabase profile:",
-            profileError
-        );
-
-        return null;
-    }
-
-    const { data: createdList, error } =
-        await supabaseClient
-            .from("shopping_lists")
-            .insert({
-                name: listName,
-                owner_id: profile.id
-            })
-            .select("id")
-            .single();
-
-    if (error) {
-        console.error(
-            "Could not create Supabase shopping list:",
-            error
-        );
-
-        return null;
-    }
-
-    data.listId = createdList.id;
-
-    const { error: memberError } =
-        await supabaseClient
-            .from("list_members")
-            .insert({
-                list_id: data.listId,
-                user_id: profile.id,
-                role: "owner"
-            });
-
-    if (memberError) {
-        console.error(
-            "Could not add list owner as member:",
-            memberError
-        );
-
-        return null;
-    }
-
-    saveData();
-
-    console.log(
-        "Supabase shopping list created:",
-        data.listId
-    );
-
-    return data.listId;
-}
-
-
-/* =========================
-   USER
-========================= */
-
-async function loginUser() {
-    const email =
-        emailInput.value.trim();
-
-    const password =
-        passwordInput.value;
-
-    if (!email || !password) {
-        authStatus.textContent =
-            "Please enter your email and password.";
-
-        return;
-    }
-
-    authStatus.textContent =
-        "Logging in...";
-
-    const { error } =
-        await supabaseClient.auth.signInWithPassword({
-            email,
-            password
-        });
-
-    if (error) {
-        console.error(
-            "BuyMe login failed:",
-            error
-        );
-
-        authStatus.textContent =
-            error.message;
-
-        return;
-    }
-
-    authStatus.textContent =
-        "Login successful.";
-
-    await loadSupabaseUser();
-
-    passwordInput.value = "";
-
-    renderAll();
-}
-
-
-async function logoutUser() {
-    const { error } =
-        await supabaseClient.auth.signOut();
-
-    if (error) {
-        console.error(
-            "BuyMe logout failed:",
-            error
-        );
-
-        authStatus.textContent =
-            error.message;
-
-        return;
-    }
-
-    authStatus.textContent =
-        "Logged out.";
-
-    data.username = "";
-    data.owner = "";
-    data.members = [];
-
-    saveData();
-
-    renderAll();
-}
-
-
-loginButton.addEventListener(
-    "click",
-    loginUser
-);
-
-
-logoutButton.addEventListener(
-    "click",
-    logoutUser
-);
-
-saveUsernameButton.addEventListener(
-    "click",
-    saveUsername
-);
-
-
-usernameInput.addEventListener(
-    "keydown",
-    event => {
-        if (event.key === "Enter") {
-            saveUsername();
+        if (sessionEpoch === epoch) {
+            blocked = error.code === 'CONFLICT';
+            $('syncStatus').textContent = cloudError(error);
         }
+    } finally {
+        if (sessionEpoch === epoch) saving = false;
     }
-);
-
-
-async function loadSupabaseUser() {
-    const {
-        data: { user },
-        error
-    } = await supabaseClient.auth.getUser();
-
-    if (error) {
-        console.error(
-            "Could not get Supabase user:",
-            error
-        );
-
-        return null;
-    }
-
-    if (!user) {
-        console.log(
-            "BuyMe: No Supabase user is currently signed in."
-        );
-
-        return null;
-    }
-
-    const {
-        data: profile,
-        error: profileError
-    } = await supabaseClient
-        .from("profiles")
-        .select("id, username")
-        .eq("id", user.id)
-        .single();
-
-    if (profileError) {
-        console.error(
-            "Could not load Supabase profile:",
-            profileError
-        );
-
-        return null;
-    }
-
-    data.username = profile.username;
-
-    if (!data.owner) {
-        data.owner = profile.username;
-    }
-
-    if (!data.members.includes(profile.username)) {
-        data.members.unshift(profile.username);
-    }
-
-    saveData();
-
-    console.log(
-        "BuyMe: Supabase user loaded:",
-        profile.username
-    );
-
-    return profile;
 }
-
-function saveUsername() {
-    const username =
-        usernameInput.value.trim();
-
-    if (!username) {
-        alert(
-            "Please enter a username."
-        );
-
-        usernameInput.focus();
-
-        return;
-    }
-
-    data.username = username;
-
-    if (!data.owner) {
-        data.owner = username;
-    }
-
-    if (!data.members.includes(username)) {
-        data.members.unshift(username);
-    }
-
-    saveData();
-    renderAll();
+function button(label, action, className = '') {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+    b.className = className; b.addEventListener('click', action); return b;
 }
-
-
-/* =========================
-   LIST NAME
-========================= */
-
-saveListNameButton.addEventListener(
-    "click",
-    saveListName
-);
-
-
-listNameInput.addEventListener(
-    "keydown",
-    event => {
-        if (event.key === "Enter") {
-            saveListName();
-        }
-    }
-);
-
-
-async function saveListName() {
-    const listName =
-        listNameInput.value.trim();
-
-    if (!listName) {
-        alert(
-            "Please enter a list name."
-        );
-
-        listNameInput.focus();
-
-        return;
-    }
-
-    data.listName = listName;
-
-    saveData();
-
-    const listId = await createSupabaseList();
-
-    if (!listId) {
-        alert("The list could not be saved to Supabase.");
-        return;
-    }
-
-    const { error: updateError } =
-        await supabaseClient
-            .from("shopping_lists")
-            .update({
-                name: listName
-            })
-            .eq("id", listId);
-
-    if (updateError) {
-        console.error(
-            "Could not update Supabase shopping list name:",
-            updateError
-        );
-
-        alert(
-            "The list name could not be updated in Supabase."
-        );
-
-        return;
-    }
-
-    console.log(
-        "Supabase shopping list name updated:",
-        listName
-    );
-
-    renderAll();
+function textElement(tag, text, className = '') {
+    const el = document.createElement(tag); el.textContent = text; el.className = className; return el;
 }
-
-
-/* =========================
-   LOCATION
-========================= */
-
-saveLocationButton.addEventListener(
-    "click",
-    saveLocation
-);
-
-
-locationInput.addEventListener(
-    "keydown",
-    event => {
-        if (event.key === "Enter") {
-            saveLocation();
-        }
-    }
-);
-
-
-function saveLocation() {
-    const location =
-        locationInput.value.trim();
-
-    if (!location) {
-        alert(
-            "Please enter a location."
-        );
-
-        locationInput.focus();
-
-        return;
-    }
-
-    data.location = location;
-
-    saveData();
-    renderAll();
-}
-
-
-/* =========================
-   INVITE
-========================= */
-
-inviteButton.addEventListener(
-    "click",
-    () => {
-        if (!isOwner()) {
-            alert(
-                "Only the list owner can invite members."
-            );
-
-            return;
-        }
-
-        alert(
-            "The invitation system will be connected to Firebase later."
-        );
-    }
-);
-
-
-/* =========================
-   ADD MARKET
-========================= */
-
-addMarketButton.addEventListener(
-    "click",
-    () => {
-        addMarketForm.style.display = "block";
-        addMarketButton.style.display = "none";
-
-        marketNameInput.value = "";
-        marketNameInput.focus();
-    }
-);
-
-
-saveMarketButton.addEventListener(
-    "click",
-    saveMarket
-);
-
-
-cancelMarketButton.addEventListener(
-    "click",
-    cancelMarket
-);
-
-
-marketNameInput.addEventListener(
-    "keydown",
-    event => {
-        if (event.key === "Enter") {
-            saveMarket();
-        }
-
-        if (event.key === "Escape") {
-            cancelMarket();
-        }
-    }
-);
-
-
-function saveMarket() {
-    const marketName =
-        marketNameInput.value.trim();
-
-    if (!marketName) {
-        marketNameInput.focus();
-
-        return;
-    }
-
-    data.markets.push({
-        id: createId(),
-        name: marketName,
-        products: []
+function renameRow(element, original, save) {
+    const input = document.createElement('input'); input.value = original; input.maxLength = 200;
+    input.setAttribute('aria-label', 'New name');
+    const row = document.createElement('div'); row.className = 'inline-edit';
+    const commit = () => { const value = input.value.trim(); if (value) save(value); else input.focus(); };
+    row.append(input, button('Save', commit), button('Cancel', render)); element.replaceWith(row);
+    input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); commit(); }
+        if (event.key === 'Escape') { event.preventDefault(); render(); }
     });
-
-    saveData();
-
-    addMarketForm.style.display = "none";
-    addMarketButton.style.display = "block";
-
-    marketNameInput.value = "";
-
-    renderAll();
+    input.focus(); input.select();
 }
-
-
-function cancelMarket() {
-    addMarketForm.style.display = "none";
-    addMarketButton.style.display = "block";
-
-    marketNameInput.value = "";
-}
-
-
-/* =========================
-   EDIT MARKET
-========================= */
-
-function editMarket(marketId) {
-    const market =
-        data.markets.find(
-            market =>
-                String(market.id) ===
-                String(marketId)
-        );
-
-    if (!market) {
-        return;
+function render() {
+    for (const [id, value] of [['usernameInput', data.username], ['listNameInput', data.listName], ['locationInput', data.location]]) {
+        if (document.activeElement !== $(id)) $(id).value = value;
     }
-
-    const marketElement =
-        document.querySelector(
-            `.market[data-market-id="${CSS.escape(
-                String(marketId)
-            )}"]`
-        );
-
-    if (!marketElement) {
-        return;
+    $('usernameDisplay').textContent = data.username ? `User: ${data.username}` : '';
+    $('listOwnerDisplay').textContent = data.owner ? `Owner: ${data.owner}` : '';
+    $('locationDisplay').textContent = data.location ? `Location: ${data.location}` : '';
+    $('logoutButton').hidden = !user;
+    $('loginButton').disabled = !cloud.available || authBusy || Boolean(user);
+    $('signupButton').disabled = !cloud.available || authBusy || Boolean(user);
+    $('emailInput').disabled = Boolean(user) || authBusy;
+    $('passwordInput').disabled = Boolean(user) || authBusy;
+    $('saveUsernameButton').disabled = authBusy;
+    $('shareButton').disabled = !cloudReady || !user || Boolean(data.listId) || authBusy;
+    $('sharedListSelect').disabled = !cloudReady || !user || authBusy;
+    $('newLocalButton').disabled = authBusy || saving;
+    $('inviteButton').hidden = !(user && cloudReady && data.listId && data.ownerId === user.id);
+    $('membersContainer').replaceChildren();
+    for (const member of data.members) {
+        const row = textElement('div', '', 'member-item');
+        row.append(textElement('span', member), textElement('span', member === data.owner ? 'Owner' : 'Member', 'member-role'));
+        $('membersContainer').append(row);
     }
-
-    const header =
-        marketElement.querySelector(
-            ".market-header"
-        );
-
-    const heading =
-        marketElement.querySelector(
-            ".market-name"
-        );
-
-    const deleteButton =
-        marketElement.querySelector(
-            ".delete-market"
-        );
-
-    if (!header || !heading) {
-        return;
-    }
-
-    const originalName =
-        market.name;
-
-    heading.outerHTML = `
-        <div class="edit-market-container">
-
-            <input
-                class="edit-market-input"
-                type="text"
-                value="${escapeHtml(originalName)}"
-            >
-
-            <button
-                class="save-market-edit-button"
-                type="button">
-                Save
-            </button>
-
-            <button
-                class="cancel-market-edit-button"
-                type="button">
-                Cancel
-            </button>
-
-        </div>
-    `;
-
-    if (deleteButton) {
-        deleteButton.disabled = true;
-    }
-
-    const editInput =
-        header.querySelector(
-            ".edit-market-input"
-        );
-
-    const saveButton =
-        header.querySelector(
-            ".save-market-edit-button"
-        );
-
-    const cancelButton =
-        header.querySelector(
-            ".cancel-market-edit-button"
-        );
-
-    if (
-        !editInput ||
-        !saveButton ||
-        !cancelButton
-    ) {
-        return;
-    }
-
-    editInput.focus();
-    editInput.select();
-
-    saveButton.addEventListener(
-        "click",
-        () => {
-            const newName =
-                editInput.value.trim();
-
-            if (!newName) {
-                alert(
-                    "Market name cannot be empty."
-                );
-
-                editInput.focus();
-
-                return;
-            }
-
-            market.name =
-                newName;
-
-            saveData();
-            renderAll();
-        }
-    );
-
-    cancelButton.addEventListener(
-        "click",
-        () => {
-            renderAll();
-        }
-    );
-
-    editInput.addEventListener(
-        "keydown",
-        event => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-
-                saveButton.click();
-            }
-
-            if (event.key === "Escape") {
-                event.preventDefault();
-
-                cancelButton.click();
-            }
-        }
-    );
-}
-
-
-/* =========================
-   RENDER ALL
-========================= */
-
-function renderAll() {
-    usernameInput.value =
-        data.username;
-
-    listNameInput.value =
-        data.listName;
-
-    locationInput.value =
-        data.location;
-
-    usernameDisplay.textContent =
-        data.username
-            ? `User: ${data.username}`
-            : "";
-
-    listOwnerDisplay.textContent =
-        data.owner
-            ? `Owner: ${data.owner}`
-            : "";
-
-    locationDisplay.textContent =
-        data.location
-            ? `Location: ${data.location}`
-            : "";
-
-    renderMembers();
+    if (!data.members.length) $('membersContainer').append(textElement('p', data.listId ? 'No members loaded.' : 'Local list. Share it after signing in to invite members.', 'empty-message'));
+    const products = data.markets.flatMap(m => m.products);
+    const purchased = products.filter(p => p.status === 'purchased').length;
+    $('progressText').textContent = `${purchased} of ${products.length} purchased`;
+    $('shoppingProgress').max = products.length || 1;
+    $('shoppingProgress').value = purchased;
+    $('clearPurchasedButton').disabled = !purchased;
     renderMarkets();
-
-    inviteButton.style.display =
-        isOwner()
-            ? "block"
-            : "none";
 }
-
-
-/* =========================
-   MEMBERS
-========================= */
-
-function renderMembers() {
-    membersContainer.innerHTML = "";
-
-    if (data.members.length === 0) {
-        membersContainer.innerHTML =
-            '<p class="empty-message">No members yet.</p>';
-
-        return;
-    }
-
-    data.members.forEach(
-        member => {
-            const memberElement =
-                document.createElement("div");
-
-            memberElement.className =
-                "member-item";
-
-            const ownerLabel =
-                member === data.owner
-                    ? "Owner"
-                    : "Member";
-
-            memberElement.innerHTML = `
-                <span>
-                    User: ${escapeHtml(member)}
-                </span>
-
-                <span class="member-role">
-                    ${ownerLabel}
-                </span>
-            `;
-
-            membersContainer.appendChild(
-                memberElement
-            );
-        }
-    );
-}
-
-
-/* =========================
-   MARKETS
-========================= */
-
 function renderMarkets() {
-    marketsContainer.innerHTML = "";
-
-    if (data.markets.length === 0) {
-        const emptyElement =
-            document.createElement("p");
-
-        emptyElement.className =
-            "empty-markets";
-
-        emptyElement.textContent =
-            "No markets added yet.";
-
-        marketsContainer.appendChild(
-            emptyElement
-        );
-
-        return;
-    }
-
-    data.markets.forEach(
-        market => {
-            const marketElement =
-                document.createElement("div");
-
-            marketElement.className =
-                "market";
-
-            marketElement.dataset.marketId =
-                market.id;
-
-            marketElement.innerHTML = `
-                <div class="market-header">
-
-                    <h2
-                        class="market-name"
-                        onclick="editMarket('${escapeJsAttribute(market.id)}')"
-                        title="Click to edit">
-                        Market: ${escapeHtml(market.name)}
-                    </h2>
-
-                    <button
-                        class="delete-market"
-                        onclick="deleteMarket('${escapeJsAttribute(market.id)}')">
-                        Delete
-                    </button>
-
-                </div>
-
-                <ul class="product-list">
-
-                    ${
-                        market.products.length === 0
-                            ? `
-                                <li class="empty-message">
-                                    No products yet.
-                                </li>
-                            `
-                            : market.products
-                                .map(
-                                    product => {
-                                        const status =
-                                            getProductStatus(
-                                                product
-                                            );
-
-                                        const statusInfo =
-                                            getStatusInfo(
-                                                status
-                                            );
-
-                                        return `
-                                            <li
-                                                class="product-item"
-                                                data-product-id="${escapeHtml(
-                                                    String(product.id)
-                                                )}">
-
-                                                <button
-                                                    class="status-button ${statusInfo.className}"
-                                                    onclick="changeProductStatus(
-                                                        '${escapeJsAttribute(market.id)}',
-                                                        '${escapeJsAttribute(product.id)}'
-                                                    )"
-                                                    title="Change product status">
-
-                                                    ${statusInfo.label}
-
-                                                </button>
-
-                                                <span
-                                                    class="product-name ${statusInfo.className}"
-                                                    onclick="editProduct(
-                                                        '${escapeJsAttribute(market.id)}',
-                                                        '${escapeJsAttribute(product.id)}'
-                                                    )"
-                                                    title="Click to edit">
-
-                                                    ${escapeHtml(
-                                                        product.name
-                                                    )}
-
-                                                </span>
-
-                                                <button
-                                                    class="delete-product"
-                                                    onclick="deleteProduct(
-                                                        '${escapeJsAttribute(market.id)}',
-                                                        '${escapeJsAttribute(product.id)}'
-                                                    )"
-                                                    title="Delete product">
-
-                                                    Delete
-
-                                                </button>
-
-                                            </li>
-                                        `;
-                                    }
-                                )
-                                .join("")
-                    }
-
-                </ul>
-
-                <div class="add-product-row">
-
-                    <input
-                        type="text"
-                        id="product-input-${escapeHtml(String(market.id))}"
-                        placeholder="Add product..."
-                        onkeydown="handleProductInputKeydown(
-                            event,
-                            '${escapeJsAttribute(market.id)}'
-                        )"
-                    >
-
-                    <button
-                        type="button"
-                        onclick="addProduct('${escapeJsAttribute(market.id)}')">
-                        + Add
-                    </button>
-
-                </div>
-            `;
-
-            marketsContainer.appendChild(
-                marketElement
-            );
+    $('marketsContainer').replaceChildren();
+    if (!data.markets.length) $('marketsContainer').append(textElement('p', 'No markets added yet.', 'empty-markets'));
+    let matchingMarkets = 0;
+    for (const market of data.markets) {
+        const visibleProducts = market.products.filter(p =>
+            (statusFilter === 'all' || p.status === statusFilter) &&
+            (!searchQuery || `${market.name} ${p.name}`.toLocaleLowerCase().includes(searchQuery)));
+        if ((searchQuery || statusFilter !== 'all') && !visibleProducts.length) continue;
+        matchingMarkets++;
+        const box = textElement('section', '', 'market'); box.dataset.marketId = market.id;
+        const header = textElement('div', '', 'market-header');
+        const name = button(`Market: ${market.name}`, () => renameRow(name, market.name, value => { market.name = value; changed(); }), 'market-name');
+        header.append(name, button('Delete', () => {
+            if (confirm(`Delete "${market.name}" and its ${market.products.length} product(s)?`)) {
+                data.markets = data.markets.filter(m => m.id !== market.id); changed();
+            }
+        }, 'delete-market'));
+        const list = textElement('ul', '', 'product-list');
+        if (!market.products.length) list.append(textElement('li', 'No products yet.', 'empty-message'));
+        for (const product of visibleProducts) {
+            const row = textElement('li', '', 'product-item'); row.dataset.productId = product.id;
+            const css = product.status === 'purchased' ? 'purchased' : product.status === 'not_found' ? 'not-found' : '';
+            const label = product.status === 'purchased' ? 'Purchased' : product.status === 'not_found' ? 'Not found' : 'Pending';
+            const status = button(label, () => { product.status = statuses[(statuses.indexOf(product.status) + 1) % statuses.length]; changed(); }, `status-button ${css}`);
+            status.setAttribute('aria-label', `Change status of ${product.name}: ${label}`);
+            const title = button(product.name, () => renameRow(title, product.name, value => { product.name = value; changed(); }), `product-name ${css}`);
+            title.title = 'Edit product';
+            row.append(status, title, button('Delete', () => {
+                if (confirm(`Delete "${product.name}"?`)) { market.products = market.products.filter(p => p.id !== product.id); changed(); }
+            }, 'delete-product')); list.append(row);
         }
-    );
-}
-
-
-/* =========================
-   STATUS
-========================= */
-
-function getProductStatus(product) {
-    const status =
-        product && product.status;
-
-    return [
-        "pending",
-        "purchased",
-        "not_found"
-    ].includes(status)
-        ? status
-        : "pending";
-}
-
-
-function getStatusInfo(status) {
-    if (status === "purchased") {
-        return {
-            className: "purchased",
-            label: "Purchased"
-        };
+        const add = textElement('form', '', 'add-product-row');
+        const input = document.createElement('input'); input.placeholder = 'Add product…'; input.maxLength = 200;
+        input.setAttribute('aria-label', `Add product to ${market.name}`);
+        const submit = button('+ Add', () => {}); submit.type = 'submit';
+        add.append(input, submit);
+        add.addEventListener('submit', event => {
+            event.preventDefault(); const name = input.value.trim(); if (!name) return input.focus();
+            market.products.push({ id: createId(), name, status: 'pending' }); changed();
+            const replacement = [...$('marketsContainer').querySelectorAll('.market')].find(m => m.dataset.marketId === market.id);
+            replacement?.querySelector('.add-product-row input')?.focus();
+        });
+        box.append(header, list, add); $('marketsContainer').append(box);
     }
-
-    if (status === "not_found") {
-        return {
-            className: "not-found",
-            label: "Not found"
-        };
-    }
-
-    return {
-        className: "",
-        label: "Pending"
+    if (data.markets.length && !matchingMarkets) $('marketsContainer').append(textElement('p', 'No matching products. Try another search or filter.', 'empty-markets'));
+}
+$('productSearch').addEventListener('input', event => { searchQuery = event.target.value.trim().toLocaleLowerCase(); renderMarkets(); });
+for (const filter of document.querySelectorAll('[data-filter]')) filter.addEventListener('click', () => {
+    statusFilter = filter.dataset.filter;
+    for (const item of document.querySelectorAll('[data-filter]')) item.setAttribute('aria-pressed', String(item === filter));
+    renderMarkets();
+});
+$('clearPurchasedButton').addEventListener('click', () => {
+    if (!confirm('Remove all purchased products from this list?')) return;
+    for (const market of data.markets) market.products = market.products.filter(p => p.status !== 'purchased');
+    changed();
+});
+function guard(action) {
+    return async (...args) => {
+        try { await action(...args); }
+        catch (error) { message(cloudError(error), true); }
     };
 }
-
-
-/* =========================
-   ADD PRODUCT
-========================= */
-
-function handleProductInputKeydown(
-    event,
-    marketId
-) {
-    if (event.key === "Enter") {
-        event.preventDefault();
-
-        addProduct(marketId);
-    }
+async function refreshLists() {
+    const sessionEpoch = epoch;
+    const lists = await cloud.lists();
+    if (sessionEpoch !== epoch) return;
+    cloudLists = lists;
+    $('sharedListSelect').replaceChildren(new Option('Choose a shared list…', ''));
+    for (const list of lists) $('sharedListSelect').append(new Option(list.document.listName || 'Shopping list', list.id));
+    $('sharedListSelect').value = data.listId;
 }
-
-
-function addProduct(marketId) {
-    const input =
-        document.getElementById(
-            `product-input-${marketId}`
-        );
-
-    if (!input) {
-        return;
-    }
-
-    const productName =
-        input.value.trim();
-
-    if (!productName) {
-        input.focus();
-
-        return;
-    }
-
-    const market =
-        data.markets.find(
-            market =>
-                String(market.id) ===
-                String(marketId)
-        );
-
-    if (!market) {
-        return;
-    }
-
-    if (!Array.isArray(market.products)) {
-        market.products = [];
-    }
-
-    market.products.push({
-        id: createId(),
-        name: productName,
-        status: "pending"
-    });
-
-    saveData();
-    renderAll();
-
-    const newInput =
-        document.getElementById(
-            `product-input-${marketId}`
-        );
-
-    if (newInput) {
-        newInput.focus();
-    }
+async function openList(id, discard = false) {
+    if (!id) return;
+    if (data.dirty && !discard && !confirm('Replace your unsynced local changes? Export a backup first if you want to keep them.')) return;
+    const sessionEpoch = epoch, localGeneration = generation;
+    const record = await cloud.list(id), members = await cloud.members(id);
+    if (sessionEpoch !== epoch) return;
+    if (localGeneration !== generation) { message('You edited this list while loading. Your changes were kept; choose the shared list again when ready.', true); return; }
+    data = normalize({ ...record.document, listId: record.id, version: record.version, ownerId: record.owner_id,
+        username: data.username, owner: members.find(m => m.role === 'owner')?.username || '', members: members.map(m => m.username) });
+    generation++; blocked = false; persist(); render();
+    $('sharedListSelect').value = data.listId;
+    $('syncStatus').textContent = 'Shared list is up to date.';
 }
-
-
-/* =========================
-   EDIT PRODUCT
-========================= */
-
-function editProduct(
-    marketId,
-    productId
-) {
-    const market =
-        data.markets.find(
-            market =>
-                String(market.id) ===
-                String(marketId)
-        );
-
-    if (!market) {
-        return;
+async function transition(session) {
+    const nextUser = session?.user || null;
+    if (nextUser?.id === user?.id && Boolean(nextUser) === Boolean(user)) { render(); return; }
+    epoch++; clearTimeout(saveTimer); saving = false; blocked = false; cloudReady = false;
+    user = nextUser; data = storage.load(user?.id); cloudLists = [];
+    $('sharedListSelect').replaceChildren(new Option('Choose a shared list…', ''));
+    $('passwordInput').value = '';
+    $('authStatus').textContent = user ? `Signed in: ${user.username}` : 'Local mode. Sign in only if you want to share lists.';
+    $('syncStatus').textContent = ''; render();
+    if (!user) return;
+    const sessionEpoch = epoch;
+    try {
+        const profile = await cloud.profile(user);
+        if (sessionEpoch !== epoch) return;
+        data.username = profile.username; persist();
+        await refreshLists(); if (sessionEpoch !== epoch) return;
+        cloudReady = true;
+        if (data.listId && !data.dirty) await openList(data.listId, true);
+        else if (data.dirty) $('syncStatus').textContent = 'Unsynced changes recovered on this device. Retry sync or export a backup.';
+        message('Signed in. Choose a shared list, or share your current local list.'); render();
+    } catch (error) { if (sessionEpoch === epoch) { message(cloudError(error), true); render(); } }
+}
+async function authenticate(signup) {
+    if (!cloud.available || authBusy) return;
+    const email = $('emailInput').value.trim(), password = $('passwordInput').value;
+    if (!email || !password) { $('authStatus').textContent = 'Please enter your account username and password.'; return; }
+    if (signup && password.length < 8) { $('authStatus').textContent = 'Use a password with at least 8 characters.'; return; }
+    authBusy = true; render(); $('authStatus').textContent = signup ? 'Creating account…' : 'Logging in…';
+    try {
+        const result = signup ? await cloud.signup(email, password) : await cloud.login(email, password);
+        $('passwordInput').value = '';
+        await transition({ user: result.user });
+        announceSession();
+    } catch (error) { $('authStatus').textContent = error.message || 'Sign-in failed. Please try again.'; }
+    finally { authBusy = false; render(); }
+}
+$('loginButton').addEventListener('click', () => authenticate(false));
+$('signupButton').addEventListener('click', () => authenticate(true));
+$('passwordInput').addEventListener('keydown', event => { if (event.key === 'Enter') authenticate(false); });
+$('logoutButton').addEventListener('click', guard(async () => {
+    if (data.dirty && !confirm('Unsynced changes are kept on this device for this account. Log out?')) return;
+    await cloud.logout();
+    announceSession();
+    await transition(null); message('Logged out. Your local list is shown.');
+}));
+$('saveUsernameButton').addEventListener('click', guard(async () => {
+    const name = $('usernameInput').value.trim();
+    if (name.length < 2 || name.length > 40) return message('Use a name with 2–40 characters.', true);
+    if (user) {
+        const sessionEpoch = epoch;
+        const profile = await cloud.rename(user, name); if (sessionEpoch !== epoch) return;
+        user = profile; $('authStatus').textContent = `Signed in: ${profile.username}`;
     }
-
-    const product =
-        market.products.find(
-            product =>
-                String(product.id) ===
-                String(productId)
-        );
-
-    if (!product) {
-        return;
+    const previousName = data.username;
+    data.username = user?.username || name;
+    if (data.listId && user?.id === data.ownerId) data.owner = data.username;
+    data.members = data.members.map(member => member === previousName ? data.username : member);
+    if (!data.listId) { data.owner = name; data.members = [name]; }
+    persist(); render(); message('Username saved.');
+}));
+for (const [input, buttonId, field] of [['listNameInput', 'saveListNameButton', 'listName'], ['locationInput', 'saveLocationButton', 'location']]) {
+    const save = () => { const value = $(input).value.trim(); if (!value && field === 'listName') return message('Please enter a list name.', true); data[field] = value; changed(); };
+    $(buttonId).addEventListener('click', save);
+    $(input).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+}
+$('usernameInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('saveUsernameButton').click(); });
+$('addMarketButton').addEventListener('click', () => { $('addMarketForm').hidden = false; $('addMarketButton').hidden = true; $('marketNameInput').focus(); });
+function cancelMarket() { $('addMarketForm').hidden = true; $('addMarketButton').hidden = false; $('marketNameInput').value = ''; }
+$('cancelMarketButton').addEventListener('click', cancelMarket);
+$('addMarketForm').addEventListener('submit', event => {
+    event.preventDefault(); const name = $('marketNameInput').value.trim(); if (!name) return;
+    data.markets.push({ id: createId(), name, products: [] }); cancelMarket(); changed();
+});
+$('marketNameInput').addEventListener('keydown', e => { if (e.key === 'Escape') cancelMarket(); });
+$('inviteButton').addEventListener('click', guard(async () => {
+    const name = prompt('Enter the BuyMe username of an already registered person to add to this list:');
+    if (!name?.trim()) return;
+    if (data.dirty) { await sync(); if (data.dirty) return message('Sync or export your pending edits before adding a member.', true); }
+    await cloud.invite(data.listId, name.trim()); await openList(data.listId, true);
+    message('Member added. They can select this list after signing in.');
+}));
+$('shareButton').addEventListener('click', guard(async () => {
+    if (!cloudReady || !user || data.listId || authBusy) return;
+    authBusy = true; render(); const sessionEpoch = epoch;
+    try {
+        const record = await cloud.create(documentOf(data));
+        if (sessionEpoch !== epoch) return;
+        // Keep edits made while the request was in flight; sync them afterwards.
+        data.listId = record.id; data.ownerId = record.owner_id; data.version = record.version;
+        data.owner = data.username; data.members = [data.username]; data.dirty = true;
+        persist(); await refreshLists(); await sync(); render();
+    } finally { authBusy = false; render(); }
+}));
+$('sharedListSelect').addEventListener('change', guard(async event => {
+    const selected = event.target.value;
+    if (!selected) return;
+    if (saving) { $('sharedListSelect').value = data.listId; return message('Wait for the current sync before switching lists.'); }
+    if (!data.listId && data.markets.length && !confirm('Your current local list stays saved only until you switch. Export it first if you want a backup. Open shared list?')) {
+        $('sharedListSelect').value = data.listId; return;
     }
-
-    const productItem =
-        document.querySelector(
-            `.product-item[data-product-id="${CSS.escape(
-                String(productId)
-            )}"]`
-        );
-
-    if (!productItem) {
-        return;
-    }
-
-    const nameElement =
-        productItem.querySelector(
-            ".product-name"
-        );
-
-    const statusButton =
-        productItem.querySelector(
-            ".status-button"
-        );
-
-    const deleteButton =
-        productItem.querySelector(
-            ".delete-product"
-        );
-
-    if (!nameElement) {
-        return;
-    }
-
-    const originalName =
-        product.name;
-
-    nameElement.outerHTML = `
-        <input
-            class="edit-product-input"
-            type="text"
-            value="${escapeHtml(originalName)}"
-        >
-
-        <button
-            class="save-product-button"
-            type="button"
-            title="Save">
-            Save
-        </button>
-
-        <button
-            class="cancel-product-button"
-            type="button"
-            title="Cancel">
-            Cancel
-        </button>
-    `;
-
-    if (statusButton) {
-        statusButton.disabled = true;
-    }
-
-    if (deleteButton) {
-        deleteButton.disabled = true;
-    }
-
-    const editInput =
-        productItem.querySelector(
-            ".edit-product-input"
-        );
-
-    const saveButton =
-        productItem.querySelector(
-            ".save-product-button"
-        );
-
-    const cancelButton =
-        productItem.querySelector(
-            ".cancel-product-button"
-        );
-
-    if (!editInput ||
-        !saveButton ||
-        !cancelButton) {
-        return;
-    }
-
-    editInput.focus();
-    editInput.select();
-
-
-    saveButton.addEventListener(
-        "click",
-        () => {
-            const newName =
-                editInput.value.trim();
-
-            if (!newName) {
-                alert(
-                    "Product name cannot be empty."
-                );
-
-                editInput.focus();
-
-                return;
-            }
-
-            product.name = newName;
-
-            saveData();
-            renderAll();
-        }
-    );
-
-
-    cancelButton.addEventListener(
-        "click",
-        () => {
-            renderAll();
-        }
-    );
-
-
-    editInput.addEventListener(
-        "keydown",
-        event => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-
-                saveButton.click();
-            }
-
-            if (event.key === "Escape") {
-                event.preventDefault();
-
-                cancelButton.click();
+    await openList(selected);
+    $('sharedListSelect').value = data.listId;
+}));
+$('newLocalButton').addEventListener('click', () => {
+    if (!confirm('Start a new local list? Export a backup first if needed. Shared lists remain in the cloud.')) return;
+    epoch++; clearTimeout(saveTimer); blocked = false;
+    data = normalize({ username: data.username, owner: data.username, members: data.username ? [data.username] : [] });
+    generation++; persist(); render(); $('sharedListSelect').value = ''; $('syncStatus').textContent = '';
+});
+$('retrySyncButton').addEventListener('click', guard(async () => {
+    if (!cloudReady && user) { const session = { user }; user = null; await transition(session); }
+    if (blocked) return message('Export your local changes, then use Load latest to resolve the conflict.', true);
+    await sync(); if (user && cloudReady) await refreshLists();
+}));
+$('reloadListButton').addEventListener('click', guard(async () => {
+    if (!user || !cloudReady || saving) return;
+    await refreshLists(); if (data.listId) await openList(data.listId);
+}));
+$('exportButton').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'buyme-list.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$('importInput').addEventListener('change', guard(async event => {
+    const file = event.target.files[0]; event.target.value = '';
+    if (!file) return;
+    if (file.size > 1000000) return message('Backup is too large (maximum 1 MB).', true);
+    const sessionEpoch = epoch, localGeneration = generation;
+    let imported;
+    try { imported = normalize(JSON.parse(await file.text())); }
+    catch { return message('This file is not a valid JSON backup.', true); }
+    if (sessionEpoch !== epoch || generation !== localGeneration) return message('The list changed while reading the backup. Please try again.', true);
+    if (!confirm('Import this backup as a new local list? Export your current list first if needed.')) return;
+    data = normalize({ ...documentOf(imported), username: data.username, owner: data.username,
+        members: data.username ? [data.username] : [] });
+    epoch++; generation++; blocked = false; clearTimeout(saveTimer); saving = false;
+    persist(); render(); $('sharedListSelect').value = ''; $('syncStatus').textContent = ''; message('Backup imported as a local list.');
+}));
+window.addEventListener('online', () => sync());
+window.addEventListener('storage', event => {
+    if (event.key === storage.key(user?.id)) message('This list changed in another tab. Export unsynced edits before refreshing.', true);
+});
+async function poll() {
+    if (!user || !cloudReady || !data.listId || data.dirty || saving || document.hidden || $('addMarketForm').hidden === false) return;
+    if (['INPUT', 'SELECT'].includes(document.activeElement?.tagName) || document.querySelector('.inline-edit')) return;
+    const sessionEpoch = epoch, listId = data.listId, revision = data.version, localGeneration = generation;
+    try {
+        const record = await cloud.list(listId);
+        if (sessionEpoch !== epoch || data.listId !== listId || data.dirty || generation !== localGeneration) return;
+        if (record.version !== revision) await openList(listId);
+        else {
+            const members = await cloud.members(listId);
+            if (sessionEpoch !== epoch || data.listId !== listId || data.dirty || generation !== localGeneration) return;
+            const names = members.map(member => member.username);
+            const owner = members.find(member => member.role === 'owner')?.username || '';
+            if (JSON.stringify(names) !== JSON.stringify(data.members) || owner !== data.owner) {
+                data.members = names; data.owner = owner; persist(); render();
             }
         }
-    );
+    } catch { $('syncStatus').textContent = 'Connection unavailable. Local editing is still available.'; }
 }
-
-
-/* =========================
-   CHANGE PRODUCT STATUS
-========================= */
-
-function changeProductStatus(
-    marketId,
-    productId
-) {
-    const market =
-        data.markets.find(
-            market =>
-                String(market.id) ===
-                String(marketId)
-        );
-
-    if (!market) {
-        return;
-    }
-
-    const product =
-        market.products.find(
-            product =>
-                String(product.id) ===
-                String(productId)
-        );
-
-    if (!product) {
-        return;
-    }
-
-    const currentStatus =
-        getProductStatus(product);
-
-    if (currentStatus === "pending") {
-        product.status =
-            "purchased";
-    } else if (
-        currentStatus === "purchased"
-    ) {
-        product.status =
-            "not_found";
-    } else {
-        product.status =
-            "pending";
-    }
-
-    saveData();
-    renderAll();
-}
-
-
-/* =========================
-   DELETE PRODUCT
-========================= */
-
-function deleteProduct(
-    marketId,
-    productId
-) {
-    const market =
-        data.markets.find(
-            market =>
-                String(market.id) ===
-                String(marketId)
-        );
-
-    if (!market) {
-        return;
-    }
-
-    const product =
-        market.products.find(
-            product =>
-                String(product.id) ===
-                String(productId)
-        );
-
-    if (!product) {
-        return;
-    }
-
-    const confirmed =
-        confirm(
-            `Delete "${product.name}"?`
-        );
-
-    if (!confirmed) {
-        return;
-    }
-
-    market.products =
-        market.products.filter(
-            product =>
-                String(product.id) !==
-                String(productId)
-        );
-
-    saveData();
-    renderAll();
-}
-
-
-/* =========================
-   DELETE MARKET
-========================= */
-
-function deleteMarket(marketId) {
-    const market =
-        data.markets.find(
-            market =>
-                String(market.id) ===
-                String(marketId)
-        );
-
-    if (!market) {
-        return;
-    }
-
-    const productCount =
-        Array.isArray(market.products)
-            ? market.products.length
-            : 0;
-
-    const message =
-        productCount > 0
-            ? `Delete "${market.name}" and its ${productCount} product(s)?`
-            : `Delete "${market.name}"?`;
-
-    const confirmed =
-        confirm(message);
-
-    if (!confirmed) {
-        return;
-    }
-
-    data.markets =
-        data.markets.filter(
-            market =>
-                String(market.id) !==
-                String(marketId)
-        );
-
-    saveData();
-    renderAll();
-}
-
-
-/* =========================
-   OWNER
-========================= */
-
-function isOwner() {
-    return Boolean(
-        data.username &&
-        data.owner &&
-        data.username === data.owner
-    );
-}
-
-
-/* =========================
-   HTML SECURITY
-========================= */
-
-function escapeHtml(text) {
-    const div =
-        document.createElement("div");
-
-    div.textContent =
-        String(text ?? "");
-
-    return div.innerHTML;
-}
-
-
-function escapeJsAttribute(value) {
-    return String(value ?? "")
-        .replace(/\\/g, "\\\\")
-        .replace(/'/g, "\\'");
-}
-
-
-/* =========================
-   START
-========================= */
-
-async function startApp() {
-    await loadSupabaseUser();
-    renderAll();
-}
-
-startApp();
-
-
-
-
-
-
+render();
+cloud.session().then(transition).catch(() => {
+    $('authStatus').textContent = 'Local mode. To share lists, run the BuyMe server (see README).'; render();
+});
+window.addEventListener('storage', event => {
+    if (event.key === 'buyme:session') cloud.session().then(transition).catch(() => {});
+});
+setInterval(poll, 10000);

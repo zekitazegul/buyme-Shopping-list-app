@@ -1,0 +1,14 @@
+{
+  "name": "buyme-shopping-list",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local-first shopping lists with an optional self-hosted Node/SQLite sharing server",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check app.js && node --check core.js && node --check cloud.js && node --check server.mjs",
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
+    "test:browser": "node --test tests/*.browser.cjs"
+  },
+  "devDependencies": { "playwright": "1.64.1" }
+}

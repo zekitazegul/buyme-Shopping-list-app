@@ -1,209 +1,73 @@
-﻿<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="theme-color" content="#1f6feb">
-
-    <title>BuyMe - Shared Shopping List</title>
-
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1f6feb">
+  <meta name="description" content="BuyMe shopping lists: local use and optional sharing with your own server.">
+  <title>BuyMe - Shopping List</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="core.js" defer></script>
+  <script src="cloud.js" defer></script>
+  <script src="app.js" defer></script>
 </head>
-
 <body>
-
-<header class="app-header">
-    <div>
-        <h1>BuyMe</h1>
-        <p>Shared shopping list</p>
-    </div>
-</header>
-
+<header class="app-header"><h1>BuyMe</h1><p>A little less planning. A little easier shopping.</p></header>
 <main class="container">
-
-    <!-- USER -->
-<section class="user-section">
-
-    <h2>User</h2>
-
-    <div class="user-row">
-
-        <input
-            type="email"
-            id="emailInput"
-            placeholder="Email"
-            autocomplete="email"
-        >
-
-        <input
-            type="password"
-            id="passwordInput"
-            placeholder="Password"
-            autocomplete="current-password"
-        >
-
-        <button id="loginButton">
-            Login
-        </button>
-
-        <button id="logoutButton" type="button">
-            Logout
-        </button>
-
+  <p id="storageWarning" class="warning" role="alert" hidden>Browser storage is unavailable or damaged. Export a backup before closing this page.</p>
+  <p id="appStatus" role="status" aria-live="polite"></p>
+  <section class="list-section" aria-labelledby="listHeading">
+    <h2 id="listHeading">Shopping List</h2>
+    <label for="listNameInput">List name</label>
+    <div class="list-name-row"><input type="text" id="listNameInput" placeholder="e.g. Weekly Shopping" maxlength="200"><button id="saveListNameButton" type="button">Save</button></div>
+    <p id="listOwnerDisplay" class="owner-display"></p>
+  </section>
+  <section class="location-section">
+    <label for="locationInput">Location</label>
+    <div class="location-row"><input type="text" id="locationInput" placeholder="e.g. Hoogvliet" maxlength="200"><button id="saveLocationButton" type="button">Save</button></div>
+    <p id="locationDisplay" class="location-display"></p>
+  </section>
+  <section class="shopping-tools" aria-label="Find products">
+    <div class="progress-heading"><h2>Your shopping</h2><span id="progressText" role="status"></span></div>
+    <progress id="shoppingProgress" max="1" value="0" aria-label="Shopping progress"></progress>
+    <label for="productSearch">Search markets or products</label>
+    <input id="productSearch" type="search" placeholder="Find something on your list…">
+    <div class="filters" aria-label="Product status"><button type="button" data-filter="all" aria-pressed="true">All</button><button type="button" data-filter="pending" aria-pressed="false">To buy</button><button type="button" data-filter="purchased" aria-pressed="false">Purchased</button><button type="button" data-filter="not_found" aria-pressed="false">Not found</button></div>
+    <button id="clearPurchasedButton" class="secondary" type="button">Clear purchased items</button>
+  </section>
+  <section id="marketsContainer" aria-label="Markets"></section>
+  <section class="add-market-section">
+    <button id="addMarketButton" class="add-market-button" type="button">+ Add Market</button>
+    <form id="addMarketForm" class="add-market-form" hidden>
+      <label for="marketNameInput">Market name</label><input type="text" id="marketNameInput" placeholder="Enter market name" maxlength="200">
+      <div class="add-market-form-buttons"><button id="saveMarketButton" type="submit" class="save-market-button">Save</button><button id="cancelMarketButton" type="button" class="cancel-market-button">Cancel</button></div>
+    </form>
+  </section>
+<details class="settings-panel"><summary>Account & sharing</summary>  <section class="user-section" aria-labelledby="userHeading">
+    <h2 id="userHeading">Your account</h2>
+    <p class="help-text">No account is needed for local lists. Create an account on your BuyMe server to share.</p>
+    <div class="auth-row">
+      <div><label for="emailInput">Account username</label><input type="text" id="emailInput" placeholder="e.g. zeki" autocomplete="username" maxlength="40" autocapitalize="none"></div>
+      <div><label for="passwordInput">Password</label><input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" maxlength="200"></div>
+      <button id="loginButton" type="button">Login</button>
+      <button id="signupButton" type="button">Create account</button>
+      <button id="logoutButton" type="button" hidden>Logout</button>
     </div>
-
-    <p id="authStatus" class="user-display"></p>
-
-    <div class="user-row">
-
-        <input
-            type="text"
-            id="usernameInput"
-            placeholder="Enter your username"
-        >
-
-        <button id="saveUsernameButton">
-            Save
-        </button>
-
-    </div>
-
+    <p id="authStatus" class="user-display" role="status"></p>
+    <label for="usernameInput">Local name / account username</label>
+    <div class="user-row"><input id="usernameInput" type="text" placeholder="Enter your name" maxlength="40"><button id="saveUsernameButton" type="button">Save</button></div>
     <p id="usernameDisplay" class="user-display"></p>
-
-</section>
-
-
-    <!-- LIST -->
-    <section class="list-section">
-
-        <h2>Shopping List</h2>
-
-        <div class="list-name-row">
-
-            <input
-                type="text"
-                id="listNameInput"
-                placeholder="e.g. Weekly Shopping"
-            >
-
-            <button id="saveListNameButton">
-                Save
-            </button>
-
-        </div>
-
-        <p id="listOwnerDisplay" class="owner-display"></p>
-
-    </section>
-
-
-    <!-- LOCATION -->
-    <section class="location-section">
-
-        <label for="locationInput">
-            Location
-        </label>
-
-        <div class="location-row">
-
-            <input
-                type="text"
-                id="locationInput"
-                placeholder="e.g. Hoogvliet"
-            >
-
-            <button id="saveLocationButton">
-                Save
-            </button>
-
-        </div>
-
-        <p id="locationDisplay" class="location-display"></p>
-
-    </section>
-
-
-    <!-- MEMBERS -->
-    <section class="members-section">
-
-        <div class="section-header">
-
-            <div>
-                <h2>Members</h2>
-                <p>People who can use this list</p>
-            </div>
-
-            <button
-                id="inviteButton"
-                class="invite-button">
-                + Invite
-            </button>
-
-        </div>
-
-        <div id="membersContainer"></div>
-
-    </section>
-
-
-    <!-- MARKETS -->
-    <section id="marketsContainer">
-        <!-- Markets will be added here -->
-    </section>
-
-
-    <!-- ADD MARKET -->
-    <section class="add-market-section">
-
-        <button
-            id="addMarketButton"
-            class="add-market-button"
-            type="button">
-            + Add Market
-        </button>
-
-        <div
-            id="addMarketForm"
-            class="add-market-form"
-            style="display: none;">
-
-            <input
-                type="text"
-                id="marketNameInput"
-                placeholder="Enter market name"
-            >
-
-            <div class="add-market-form-buttons">
-
-                <button
-                    id="saveMarketButton"
-                    type="button"
-                    class="save-market-button">
-                    Save
-                </button>
-
-                <button
-                    id="cancelMarketButton"
-                    type="button"
-                    class="cancel-market-button">
-                    Cancel
-                </button>
-
-            </div>
-
-        </div>
-
-    </section>
-
+  </section>
+<section class="list-section"><h2>Sharing & backups</h2>    <div class="list-actions"><button id="newLocalButton" type="button">New local list</button><button id="exportButton" type="button">Export backup</button><label class="import-label" for="importInput">Import backup<input id="importInput" type="file" accept="application/json,.json"></label></div>
+    <label for="sharedListSelect">Shared lists</label>
+    <select id="sharedListSelect"><option value="">Choose a shared list…</option></select>
+    <div class="list-actions"><button id="shareButton" type="button">Share this list</button><button id="reloadListButton" type="button">Load latest</button><button id="retrySyncButton" type="button">Retry sync</button></div>
+    <p id="syncStatus" class="help-text" role="status"></p>
+</section>  <section class="members-section" aria-labelledby="membersHeading">
+    <div class="section-header"><div><h2 id="membersHeading">Members</h2><p>People who can use this shared list</p></div><button id="inviteButton" type="button" class="invite-button" hidden>+ Invite</button></div>
+    <div id="membersContainer"></div>
+  </section>
+</details>
 </main>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js"></script>
-
 </body>
 </html>
-
-
-
-
