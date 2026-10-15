@@ -155,10 +155,8 @@ function renderProducts() {
     $('progressText').textContent = t('{done} of {total} purchased', { done: purchased, total: allProducts.length });
     $('shoppingProgress').max = allProducts.length || 1; $('shoppingProgress').value = purchased;
     $('clearPurchasedButton').disabled = !purchased;
-    const statusOrder = { pending: 0, not_found: 1, purchased: 2 };
     const products = market.products
-        .filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!searchQuery || searchText(p.name).includes(searchText(searchQuery))))
-        .sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+        .filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!searchQuery || searchText(p.name).includes(searchText(searchQuery))));
     const list = textElement('ul', '', 'product-list');
     if (!products.length) list.append(textElement('li', t(market.products.length ? 'No matching products' : 'No products yet'), 'empty-message'));
     for (const product of products) {
@@ -167,10 +165,79 @@ function renderProducts() {
         const statusButton = button(t(key), () => { product.status = statuses[(statuses.indexOf(product.status)+1)%statuses.length]; changed(); }, `status-button ${product.status}`);
         statusButton.setAttribute('aria-label', t('Change status of {name}: {status}', { name: product.name, status: t(key) }));
         const title = button(product.name, () => renameRow(title, product.name, value => { product.name = value; changed(); }), `product-name ${product.status}`); title.title = t('Edit product');
-        row.append(statusButton, title, button(t('Delete'), () => { if (confirm(t('Delete {name}?', { name: product.name }))) { market.products = market.products.filter(p => p.id !== product.id); changed(); } }, 'delete-product'));
+        const handle = button('⠿', () => {}, 'drag-handle');
+        handle.setAttribute('aria-label', t('Move {name}', { name: product.name }));
+        handle.title = t('Reorder help');
+        enableProductDrag(handle, row, market, list);
+        row.append(handle, statusButton, title, button(t('Delete'), () => { if (confirm(t('Delete {name}?', { name: product.name }))) { market.products = market.products.filter(p => p.id !== product.id); changed(); } }, 'delete-product'));
         list.append(row);
     }
     $('marketsContainer').append(list);
+}
+// Pointer events support both mouse and touch; only the handle captures scrolling.
+function enableProductDrag(handle, row, market, list) {
+    let drag = null, frame;
+    function reorderAt(y) {
+        const others = [...list.querySelectorAll('.product-item')].filter(item => item !== row);
+        const target = others.find(item => { const rect = item.getBoundingClientRect(); return y < rect.top + rect.height / 2; });
+        drag.before = target || null;
+        for (const item of others) item.classList.remove('drop-before', 'drop-after');
+        if (target) target.classList.add('drop-before'); else others.at(-1)?.classList.add('drop-after');
+        row.style.transform = `translateY(${y - drag.startY}px)`;
+    }
+    function stop() {
+        cancelAnimationFrame(frame); row.classList.remove('dragging-product'); row.style.transform = '';
+        for (const item of list.children) item.classList.remove('drop-before', 'drop-after');
+        const pointerId = drag?.pointerId; drag = null;
+        if (pointerId !== undefined && handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+    }
+    function saveOrder() {
+        const ids = [...list.querySelectorAll('.product-item')].map(item => item.dataset.productId);
+        const visible = new Set(ids), oldIds = market.products.filter(p => visible.has(p.id)).map(p => p.id);
+        if (ids.every((id, index) => id === oldIds[index])) return;
+        const byId = new Map(market.products.map(p => [p.id, p])); let index = 0;
+        // With a filter active, only visible products exchange positions.
+        market.products = market.products.map(p => visible.has(p.id) ? byId.get(ids[index++]) : p);
+        changed(); status('appStatus', 'Order saved');
+    }
+    function autoScroll() {
+        if (!drag) return;
+        if (!row.isConnected) { stop(); return; }
+        if (drag.moved) {
+            const box = $('marketsContainer'), rect = box.getBoundingClientRect();
+            if (drag.y < rect.top + 35) box.scrollTop -= 10;
+            else if (drag.y > rect.bottom - 35) box.scrollTop += 10;
+            reorderAt(drag.y);
+        }
+        frame = requestAnimationFrame(autoScroll);
+    }
+    handle.addEventListener('pointerdown', event => {
+        if (!event.isPrimary || event.button !== 0) return;
+        event.preventDefault();
+        drag = { pointerId: event.pointerId, startY: event.clientY, y: event.clientY, moved: false, epoch, generation };
+        handle.setPointerCapture(event.pointerId); row.classList.add('dragging-product'); frame = requestAnimationFrame(autoScroll);
+    });
+    handle.addEventListener('pointermove', event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        drag.y = event.clientY; drag.moved ||= Math.abs(drag.y - drag.startY) > 5;
+        if (drag.moved) reorderAt(drag.y);
+    });
+    handle.addEventListener('pointerup', event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        const valid = drag.moved && drag.epoch === epoch && drag.generation === generation;
+        const before = drag.before;
+        stop(); if (valid) { list.insertBefore(row, before || null); saveOrder(); } else renderProducts();
+    });
+    handle.addEventListener('pointercancel', () => { if (drag) { stop(); renderProducts(); } });
+    handle.addEventListener('lostpointercapture', () => { if (drag) { stop(); renderProducts(); } });
+    handle.addEventListener('keydown', event => {
+        if (!['ArrowUp','ArrowDown'].includes(event.key)) return;
+        event.preventDefault(); const target = event.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
+        if (!target?.matches('.product-item')) return;
+        if (event.key === 'ArrowUp') list.insertBefore(row, target); else list.insertBefore(target, row);
+        const id = row.dataset.productId; saveOrder();
+        [...$('marketsContainer').querySelectorAll('.product-item')].find(item => item.dataset.productId === id)?.querySelector('.drag-handle').focus();
+    });
 }
 function renderMembers() {
     $('membersContainer').replaceChildren();
@@ -343,7 +410,7 @@ $('importInput').addEventListener('change', guard(async e => {
 async function poll() {
     if (document.hidden || authBusy) return;
     if (!cloud.available || !user) { try { await transition(await cloud.session()); } catch { /* Preserve local mode until connectivity returns. */ } return; }
-    if (!cloudReady || data.dirty || saving || creating || ['INPUT','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('.inline-edit')) return;
+    if (!cloudReady || data.dirty || saving || creating || ['INPUT','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('.inline-edit, .dragging-product')) return;
     const sessionEpoch = epoch, id = data.listId, revision = data.version, localGeneration = generation;
     try {
         await refreshLists(); if (!id) return;

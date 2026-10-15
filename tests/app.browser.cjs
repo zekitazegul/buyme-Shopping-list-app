@@ -83,3 +83,24 @@ test('missing language script leaves readable labels and safe recovery instructi
     assert.equal(await page.locator('main').evaluate(el=>el.inert),true);
     await context.close();
 });
+for (const touch of [false,true]) test(`${touch?'touch':'mouse'} reordering persists and status changes keep products in place`,async()=>{
+    const context=await browser.newContext({viewport:{width:390,height:844},isMobile:touch,hasTouch:touch}),page=await context.newPage();
+    await guest(page);await addMarket(page,'Manual order');for(const name of ['One','Two','Three']) await addProduct(page,name);
+    await page.locator('.status-button').first().click();assert.deepEqual(await page.locator('.product-name').allTextContents(),['Three','Two','One']);
+    await page.locator('.status-button').first().click();assert.deepEqual(await page.locator('.product-name').allTextContents(),['Three','Two','One']);
+    await page.locator('#marketsContainer').scrollIntoViewIfNeeded();
+    const from=await page.locator('.drag-handle').last().boundingBox(),target=await page.locator('.product-item').first().boundingBox();
+    const x=from.x+from.width/2,startY=from.y+from.height/2,endY=target.y+2;
+    if(touch){
+        const cdp=await context.newCDPSession(page);
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:startY}]});
+        for(let i=1;i<=12;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:startY+(endY-startY)*i/12}]});
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();
+    }else{await page.mouse.move(x,startY);await page.mouse.down();await page.mouse.move(x,endY,{steps:12});await page.mouse.up();}
+    assert.deepEqual(await page.locator('.product-name').allTextContents(),['One','Three','Two']);
+    await page.reload();await page.locator('#guestButton').click();assert.deepEqual(await page.locator('.product-name').allTextContents(),['One','Three','Two']);
+    await page.locator('.drag-handle').first().focus();await page.keyboard.press('ArrowDown');assert.deepEqual(await page.locator('.product-name').allTextContents(),['Three','One','Two']);
+    await page.locator('#statusFilter').selectOption('pending');await page.locator('.drag-handle').first().focus();await page.keyboard.press('ArrowDown');
+    assert.deepEqual(await page.locator('.product-name').allTextContents(),['Two','One']);await page.locator('#statusFilter').selectOption('all');assert.deepEqual(await page.locator('.product-name').allTextContents(),['Three','Two','One']);
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await context.close();
+});

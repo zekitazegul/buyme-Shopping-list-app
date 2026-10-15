@@ -68,6 +68,11 @@ dilde güncellenir. Yeni arayüz metinlerini `i18n.js` içinde üç dilde birlik
   düzenlemeler yerelde kalır; bağlantı gelince **Eşitlemeyi tekrar dene** kullanılabilir.
 - Konum alanı arayüzden kaldırılmıştır. Eski yedeklerdeki konum verisi korunur.
 
+Ürünlerin soldaki noktalı tutamacını sürükleyerek sırasını değiştirebilirsiniz.
+Bilgisayarda tutamaç odaktayken yukarı/aşağı ok tuşları da çalışır. Durum değişince
+ürün yerinde kalır; elle belirlenen sıra kaydedilir ve paylaşılan listeyle eşitlenir.
+Filtre açıkken yalnızca görünen ürünlerin yerleri değişir.
+
 ## Data and migration to another computer
 
 The server creates `data/buyme.sqlite` (and WAL/SHM sidecars while running).

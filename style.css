@@ -132,3 +132,10 @@ dialog section h3 { margin-bottom: 12px; }
 /* Keep the newest products visible above the entry field while typing. */
 #marketsContainer { max-height: 32vh; max-height: 32dvh; overflow-y: auto; overscroll-behavior-y: contain; margin-bottom: 16px; }
 #productForm { margin-top: 8px; }
+
+.drag-handle { flex-shrink: 0; touch-action: none; user-select: none; cursor: grab; color: var(--muted); background: transparent; padding: 4px; min-width: 32px; min-height: 44px; font-size: 1.4rem; }
+.dragging-product { position: relative; z-index: 1; pointer-events: none; background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 12px; }
+.dragging-product .drag-handle { cursor: grabbing; }
+
+.product-item.drop-before { box-shadow: 0 -3px 0 var(--accent); }
+.product-item.drop-after { box-shadow: 0 3px 0 var(--accent); }

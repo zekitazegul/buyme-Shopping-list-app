@@ -650,6 +650,9 @@
 };
     catalog['List name saved locally'] = { tr: 'Liste adı bu cihaza kaydedildi.', en: 'List name saved on this device.', nl: 'Lijstnaam op dit apparaat opgeslagen.' };
     catalog['List name: {name}'] = { tr: 'Liste adı: {name}', en: 'List name: {name}', nl: 'Lijstnaam: {name}' };
+    catalog['Move {name}'] = { tr: '{name} ürününü taşı', en: 'Move {name}', nl: '{name} verplaatsen' };
+    catalog['Reorder help'] = { tr: 'Sıralamak için tutamacı sürükle veya yukarı/aşağı ok tuşlarını kullan.', en: 'Drag the handle or use the up/down arrow keys to reorder.', nl: 'Sleep de greep of gebruik de pijltoetsen omhoog/omlaag om te sorteren.' };
+    catalog['Order saved'] = { tr: 'Ürün sırası kaydedildi.', en: 'Product order saved.', nl: 'Productvolgorde opgeslagen.' };
     let language = 'tr';
     const t = (key, values = {}) => {
         const source = catalog[key]?.[language] ?? key;
