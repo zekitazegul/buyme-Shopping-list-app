@@ -648,6 +648,8 @@
     "nl": "Te veel inlogpogingen. Probeer het later opnieuw."
   }
 };
+    catalog['List name saved locally'] = { tr: 'Liste adı bu cihaza kaydedildi.', en: 'List name saved on this device.', nl: 'Lijstnaam op dit apparaat opgeslagen.' };
+    catalog['List name: {name}'] = { tr: 'Liste adı: {name}', en: 'List name: {name}', nl: 'Lijstnaam: {name}' };
     let language = 'tr';
     const t = (key, values = {}) => {
         const source = catalog[key]?.[language] ?? key;

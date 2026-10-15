@@ -25,7 +25,7 @@ function errorKey(error) {
 }
 function fail(error, id = 'appStatus') { status(id, errorKey(error), {}, true); }
 function guard(action, id) { return async (...args) => { try { await action(...args); } catch (error) { fail(error, id); } }; }
-function persist() { storage.save(data, user?.id); }
+function persist() { return storage.save(data, user?.id); }
 function announceSession() { try { browserStorage.setItem('buyme:session', String(Date.now())); } catch { /* Cookie works without browser storage. */ } }
 function savePreferences() { try { browserStorage.setItem('buymePreferences', JSON.stringify(preferences)); } catch { $('storageWarning').hidden = false; } }
 function applyPreferences() {
@@ -50,11 +50,12 @@ function textElement(tag, text, className = '') { const el = document.createElem
 function listTitle(record) { return record.listName && record.listName !== 'My Shopping List' ? record.listName : record.markets.map(m => m.name).join(' · ') || t('Shopping list'); }
 function selectedMarket() { return data.markets.find(m => m.id === activeMarket); }
 function changed() {
-    generation++; data.dirty = Boolean(user); persist(); render();
+    generation++; data.dirty = Boolean(user); const saved = persist(); render();
     if (user) {
         status('syncStatus', 'Waiting to sync');
         clearTimeout(saveTimer); saveTimer = setTimeout(() => saveToAccount().catch(fail), 250);
     }
+    return saved;
 }
 async function ensureList() {
     if (!user || !cloudReady) throw Object.assign(Error(), { code: 'UNAUTHORIZED' });
@@ -87,6 +88,7 @@ async function sync() {
             const record = await cloud.save(id, data.version, snapshot);
             if (sessionEpoch !== epoch || id !== data.listId) return;
             data.version = record.version; data.dirty = generation !== sentGeneration; persist();
+            cloudLists = cloudLists.map(list => list.id === record.id ? record : list); renderListOptions();
         }
         if (sessionEpoch === epoch) status('syncStatus', 'Up to date');
     } catch (error) {
@@ -127,6 +129,7 @@ function render() {
     $('legacyEmailRow').hidden = !user || Boolean(user.email);
     if (document.activeElement !== $('usernameInput')) $('usernameInput').value = user?.name || '';
     if (document.activeElement !== $('listNameInput')) $('listNameInput').value = data.listName === 'My Shopping List' ? '' : data.listName;
+    $('listNameSummary').textContent = data.listName && data.listName !== 'My Shopping List' ? t('List name: {name}', { name: data.listName }) : t('Name your list (optional)');
     const market = selectedMarket(); if (!market) activeMarket = data.markets[0]?.id || '';
     renderMarketChoices(); renderProducts(); renderContacts(); renderMembers();
 }
@@ -200,6 +203,7 @@ async function openList(id, discard = false) {
     if (localGeneration !== generation) return status('appStatus', 'Changed while loading', {}, true);
     data = normalize({ ...record.document, listId: record.id, version: record.version, ownerId: record.owner_id, username: user.name,
         owner: members.find(m => m.role === 'owner')?.name || '', members: members.map(m => m.name) });
+    status('listNameStatus', '');
     generation++; blocked = false; activeMarket = data.markets[0]?.id || ''; persist(); render(); renderListOptions(); status('syncStatus', 'Up to date');
 }
 async function transition(session) {
@@ -209,7 +213,7 @@ async function transition(session) {
     user = nextUser; data = storage.load(user?.id); cloudLists = []; contacts = []; activeMarket = '';
     $('passwordInput').value = ''; $('recipientInput').value = ''; $('recipientName').value = '';
     for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
-    status('syncStatus', ''); renderListOptions(); render();
+    status('syncStatus', ''); status('listNameStatus', ''); renderListOptions(); render();
     if (!user) { signupMode = false; render(); return; }
     const sessionEpoch = epoch;
     try {
@@ -249,7 +253,13 @@ $('profileForm').addEventListener('submit', guard(async e => {
     data.members = data.members.map(name => name === previous ? user.name : name); if (user.id === data.ownerId) data.owner = user.name;
     $('profilePassword').value = ''; persist(); render(); status('settingsStatus', 'Profile saved');
 }, 'settingsStatus'));
-$('saveListNameButton').addEventListener('click', () => { data.listName = $('listNameInput').value.trim(); changed(); });
+$('saveListNameButton').addEventListener('click', () => {
+    data.listName = $('listNameInput').value.trim(); const saved = changed();
+    cloudLists = cloudLists.map(list => list.id === data.listId ? { ...list, document: { ...list.document, listName: data.listName } } : list);
+    renderListOptions();
+    status('listNameStatus', saved ? 'List name saved locally' : 'Storage warning', {}, !saved);
+});
+$('listNameInput').addEventListener('input', () => status('listNameStatus', ''));
 $('listNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('saveListNameButton').click(); } });
 $('addMarketButton').addEventListener('click', () => { $('addMarketForm').hidden = false; $('marketNameInput').focus(); });
 $('cancelMarketButton').addEventListener('click', () => { $('addMarketForm').hidden = true; $('marketNameInput').value = ''; });
