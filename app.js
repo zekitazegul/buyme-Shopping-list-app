@@ -261,7 +261,9 @@ $('addMarketForm').addEventListener('submit', e => {
 });
 $('productForm').addEventListener('submit', e => {
     e.preventDefault(); const market = selectedMarket(), name = $('productNameInput').value.trim(); if (!market || !name) return;
-    market.products.push({ id: createId(), name, status: 'pending' }); $('productNameInput').value = ''; changed(); $('productNameInput').focus();
+    market.products.unshift({ id: createId(), name, status: 'pending' });
+    searchQuery = ''; statusFilter = 'all'; $('productSearch').value = ''; $('statusFilter').value = 'all';
+    $('productNameInput').value = ''; changed(); $('marketsContainer').scrollTop = 0; $('productNameInput').focus();
 });
 $('renameMarketButton').addEventListener('click', () => { const market = selectedMarket(); const name = prompt(t('New name'),market.name); if (name?.trim() && name.trim().length <= 200) { market.name = name.trim(); changed(); } });
 $('deleteMarketButton').addEventListener('click', () => { const market = selectedMarket(); if (confirm(t('Delete market {name} with {count} products?', { name: market.name, count: market.products.length }))) { data.markets = data.markets.filter(m => m.id !== market.id); activeMarket = ''; changed(); } });

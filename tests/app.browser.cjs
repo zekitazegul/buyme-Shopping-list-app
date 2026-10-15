@@ -55,7 +55,7 @@ test('email accounts persist login, share with saved contacts and protect confli
 test('search, filters, unnamed lists, market switching and bulk clearing work together',async()=>{
     const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage();await guest(page);
     assert.equal(await page.locator('#locationInput').count(),0);assert(await page.locator('#itemsSection').isHidden());await page.locator('.market-choice').filter({hasText:'Lidl'}).click();await addProduct(page,'Milk');await addProduct(page,'Bread');
-    assert.equal(await page.locator('#listNameInput').inputValue(),'');await page.locator('.status-button').first().click();await text(page,'progressText','2 üründen 1');
+    assert.equal(await page.locator('#listNameInput').inputValue(),'');await page.locator('.product-item').filter({hasText:'Milk'}).locator('.status-button').click();await text(page,'progressText','2 üründen 1');
     await page.locator('#statusFilter').selectOption('pending');assert.equal(await page.locator('.product-name').textContent(),'Bread');await page.locator('#statusFilter').selectOption('all');await page.locator('#productSearch').fill('MILK');assert.equal(await page.locator('.product-name').textContent(),'Milk');
     await page.locator('#productSearch').fill('missing');assert.match(await page.locator('.empty-message').textContent(),/Eşleşen/);await page.locator('#productSearch').fill('');
     page.once('dialog',d=>d.accept());await page.locator('#clearPurchasedButton').click();assert.equal(await page.locator('.product-name').textContent(),'Bread');
