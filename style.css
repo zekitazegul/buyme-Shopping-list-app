@@ -126,3 +126,5 @@ dialog section h3 { margin-bottom: 12px; }
   :root[data-size=large] .header-actions { flex-wrap: wrap; justify-content: end; }
 }
 @media(prefers-reduced-motion: no-preference) { button { transition: background-color .15s, filter .15s; } }
+
+.startup-notice { max-width: 770px; margin: 12px auto; padding: 16px; color: var(--ink); background: var(--accent-soft); border-radius: 12px; line-height: 1.6; }

@@ -339,5 +339,7 @@ async function poll() {
 window.addEventListener('online', () => { if (user && cloudReady) saveToAccount().catch(fail); else poll(); });
 window.addEventListener('storage', e => { if (e.key === storage.key(user?.id)) status('appStatus','Other tab changed',{},true); if (e.key === 'buyme:session') cloud.session().then(transition).catch(() => {}); });
 applyPreferences();
+$('startupNotice').hidden = true;
+document.querySelector('main').inert = false;
 cloud.session().then(transition).catch(() => { status('authStatus','Server offline'); render(); });
 setInterval(poll,10000);

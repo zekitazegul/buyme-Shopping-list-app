@@ -20,57 +20,58 @@
     <button id="settingsButton" class="icon-button" type="button" data-i18n="Settings">Ayarlar</button>
   </div>
 </header>
-<main class="container">
-  <p id="storageWarning" class="warning" role="alert" hidden data-i18n="Storage warning"></p>
+<p id="startupNotice" class="startup-notice" role="status">Arayüz yükleniyor. Bu mesaj kalırsa sunucuyu yeniden başlatıp sayfayı yenileyin.<br>Loading the interface. If this message remains, restart the server and refresh.<br>De interface wordt geladen. Blijft dit bericht staan? Start de server opnieuw en vernieuw de pagina.</p>
+<main class="container" inert>
+  <p id="storageWarning" class="warning" role="alert" hidden data-i18n="Storage warning">Tarayıcı kaydı kullanılamıyor veya bozulmuş. Sayfayı kapatmadan önce yedek dışa aktarın.</p>
   <p id="appStatus" role="status" aria-live="polite"></p>
   <section id="authScreen" class="welcome card">
     <span class="welcome-icon" aria-hidden="true">🧺</span>
     <p class="eyebrow" data-i18n="Welcome">BuyMe’ye hoş geldin</p>
     <h1 data-i18n="Shop together">Alışveriş birlikte daha kolay.</h1>
-    <p class="muted" data-i18n="Welcome help"></p>
-    <div class="auth-tabs"><button id="loginTab" type="button" data-i18n="Login" aria-pressed="true"></button><button id="signupTab" type="button" data-i18n="Create account" aria-pressed="false"></button></div>
+    <p class="muted" data-i18n="Welcome help">Bir kez giriş yap, listelerin hep yanında olsun. Marketini seç, ürünlerini ekle ve sevdiklerinle paylaş.</p>
+    <div class="auth-tabs"><button id="loginTab" type="button" data-i18n="Login" aria-pressed="true">Giriş yap</button><button id="signupTab" type="button" data-i18n="Create account" aria-pressed="false">Hesap oluştur</button></div>
     <form id="authForm">
-      <div id="signupNameRow" hidden><label for="signupName" data-i18n="Your name"></label><input id="signupName" maxlength="80" autocomplete="name"></div>
-      <label id="emailLabel" for="emailInput" data-i18n="Email or old username"></label><input id="emailInput" type="text" inputmode="email" autocomplete="username" autocapitalize="none" maxlength="254" required>
-      <label for="passwordInput" data-i18n="Password"></label><input id="passwordInput" type="password" autocomplete="current-password" minlength="8" maxlength="200" required>
-      <button id="loginButton" class="wide" type="submit" data-i18n="Login"></button>
-      <button id="signupButton" class="wide" type="submit" hidden data-i18n="Create account"></button>
+      <div id="signupNameRow" hidden><label for="signupName" data-i18n="Your name">Adınız</label><input id="signupName" maxlength="80" autocomplete="name"></div>
+      <label id="emailLabel" for="emailInput" data-i18n="Email or old username">E-posta veya eski kullanıcı adı</label><input id="emailInput" type="text" inputmode="email" autocomplete="username" autocapitalize="none" maxlength="254" required>
+      <label for="passwordInput" data-i18n="Password">Şifre</label><input id="passwordInput" type="password" autocomplete="current-password" minlength="8" maxlength="200" required>
+      <button id="loginButton" class="wide" type="submit" data-i18n="Login">Giriş yap</button>
+      <button id="signupButton" class="wide" type="submit" hidden data-i18n="Create account">Hesap oluştur</button>
     </form>
     <p id="authStatus" role="status" class="muted"></p>
-    <button id="guestButton" class="text-button" type="button" data-i18n="Continue locally"></button>
+    <button id="guestButton" class="text-button" type="button" data-i18n="Continue locally">Hesapsız, bu cihazda devam et</button>
   </section>
   <div id="shoppingScreen" hidden>
-    <section class="intro"><div><p id="greeting" class="eyebrow"></p><h1 data-i18n="What do we need?">Neler alıyoruz?</h1><p class="muted" data-i18n="Shopping help"></p></div><button id="shareOpenButton" class="share-button" type="button" data-i18n="Share list"></button></section>
+    <section class="intro"><div><p id="greeting" class="eyebrow"></p><h1 data-i18n="What do we need?">Neler alıyoruz?</h1><p class="muted" data-i18n="Shopping help">Marketini seç, ürünlerini ekle. Gerisini BuyMe hatırlasın.</p></div><button id="shareOpenButton" class="share-button" type="button" data-i18n="Share list">Listeyi paylaş</button></section>
     <section class="market-picker card">
-      <div class="step-heading"><span class="step">1</span><h2 data-i18n="Choose a market"></h2></div>
+      <div class="step-heading"><span class="step">1</span><h2 data-i18n="Choose a market">Market seç</h2></div>
       <div id="marketChoices" class="market-choices" aria-label="Market"></div>
-      <button id="addMarketButton" class="text-button" type="button" data-i18n="Other market"></button>
-      <form id="addMarketForm" hidden><label for="marketNameInput" data-i18n="Market name"></label><div class="input-row"><input id="marketNameInput" maxlength="200" required><button type="submit" data-i18n="Add"></button><button id="cancelMarketButton" class="secondary" type="button" data-i18n="Cancel"></button></div></form>
+      <button id="addMarketButton" class="text-button" type="button" data-i18n="Other market">+ Başka market ekle</button>
+      <form id="addMarketForm" hidden><label for="marketNameInput" data-i18n="Market name">Market adı</label><div class="input-row"><input id="marketNameInput" maxlength="200" required><button type="submit" data-i18n="Add">Ekle</button><button id="cancelMarketButton" class="secondary" type="button" data-i18n="Cancel">Vazgeç</button></div></form>
     </section>
     <section id="itemsSection" class="card" hidden>
-      <div class="step-heading"><span class="step coral">2</span><h2 data-i18n="Add your products"></h2></div>
-      <form id="productForm" class="input-row"><label class="sr-only" for="productNameInput" data-i18n="Product name"></label><input id="productNameInput" data-i18n-placeholder="Product placeholder" maxlength="200" required><button type="submit" data-i18n="Add"></button></form>
-      <div class="list-heading"><h3 id="activeMarketName"></h3><button id="renameMarketButton" class="text-button" type="button" data-i18n="Rename"></button><button id="deleteMarketButton" class="danger text-button" type="button" data-i18n="Delete market"></button></div>
-      <div class="progress-heading"><span id="progressText" role="status"></span><button id="clearPurchasedButton" class="text-button" type="button" data-i18n="Clear purchased"></button></div>
+      <div class="step-heading"><span class="step coral">2</span><h2 data-i18n="Add your products">Ürünlerini ekle</h2></div>
+      <form id="productForm" class="input-row"><label class="sr-only" for="productNameInput" data-i18n="Product name">Ürün adı</label><input id="productNameInput" placeholder="Örn. süt, ekmek, domates…" data-i18n-placeholder="Product placeholder" maxlength="200" required><button type="submit" data-i18n="Add">Ekle</button></form>
+      <div class="list-heading"><h3 id="activeMarketName"></h3><button id="renameMarketButton" class="text-button" type="button" data-i18n="Rename">Adını değiştir</button><button id="deleteMarketButton" class="danger text-button" type="button" data-i18n="Delete market">Marketi sil</button></div>
+      <div class="progress-heading"><span id="progressText" role="status"></span><button id="clearPurchasedButton" class="text-button" type="button" data-i18n="Clear purchased">Alınanları temizle</button></div>
       <progress id="shoppingProgress" max="1" value="0" data-i18n-aria="Shopping progress"></progress>
-      <div class="search-row"><label class="sr-only" for="productSearch" data-i18n="Search products"></label><input id="productSearch" type="search" data-i18n-placeholder="Search products"><select id="statusFilter" data-i18n-aria="Filter"><option value="all" data-i18n="All"></option><option value="pending" data-i18n="To buy"></option><option value="purchased" data-i18n="Purchased"></option><option value="not_found" data-i18n="Not found"></option></select></div>
+      <div class="search-row"><label class="sr-only" for="productSearch" data-i18n="Search products">Ürün ara</label><input id="productSearch" type="search" placeholder="Ürün ara" data-i18n-placeholder="Search products"><select id="statusFilter" data-i18n-aria="Filter"><option value="all" data-i18n="All">Tümü</option><option value="pending" data-i18n="To buy">Alınacak</option><option value="purchased" data-i18n="Purchased">Alındı</option><option value="not_found" data-i18n="Not found">Bulunamadı</option></select></div>
       <section id="marketsContainer" data-i18n-aria="Products"></section>
-      <details class="list-details"><summary data-i18n="Name your list (optional)"></summary><label for="listNameInput" data-i18n="List name"></label><div class="input-row"><input id="listNameInput" maxlength="200" data-i18n-placeholder="List name example"><button id="saveListNameButton" type="button" data-i18n="Save"></button></div></details>
+      <details class="list-details"><summary data-i18n="Name your list (optional)">Listeye isim ver (isteğe bağlı)</summary><label for="listNameInput" data-i18n="List name">Liste adı</label><div class="input-row"><input id="listNameInput" maxlength="200" placeholder="Örn. haftalık alışveriş" data-i18n-placeholder="List name example"><button id="saveListNameButton" type="button" data-i18n="Save">Kaydet</button></div></details>
     </section>
-    <section id="savedListsSection" class="saved-lists card"><div class="section-header"><h2 data-i18n="My lists"></h2><button id="newLocalButton" class="text-button" type="button" data-i18n="New list"></button></div><label class="sr-only" for="sharedListSelect" data-i18n="My lists"></label><select id="sharedListSelect"></select><p id="syncStatus" role="status" class="muted"></p><div class="list-actions"><button id="saveOnlineButton" class="secondary" type="button" data-i18n="Save to account"></button><button id="reloadListButton" class="text-button" type="button" data-i18n="Load latest"></button><button id="retrySyncButton" class="text-button" type="button" data-i18n="Retry sync"></button></div></section>
+    <section id="savedListsSection" class="saved-lists card"><div class="section-header"><h2 data-i18n="My lists">Listelerim</h2><button id="newLocalButton" class="text-button" type="button" data-i18n="New list">+ Yeni liste</button></div><label class="sr-only" for="sharedListSelect" data-i18n="My lists">Listelerim</label><select id="sharedListSelect"></select><p id="syncStatus" role="status" class="muted"></p><div class="list-actions"><button id="saveOnlineButton" class="secondary" type="button" data-i18n="Save to account">Hesabıma kaydet</button><button id="reloadListButton" class="text-button" type="button" data-i18n="Load latest">Son halini yükle</button><button id="retrySyncButton" class="text-button" type="button" data-i18n="Retry sync">Eşitlemeyi tekrar dene</button></div></section>
   </div>
 </main>
-<dialog id="shareDialog"><div class="dialog-heading"><h2 data-i18n="Share list"></h2><button type="button" class="close-button secondary" data-close="shareDialog" data-i18n="Close"></button></div>
-  <p class="muted" data-i18n="Share help"></p>
-  <form id="shareForm"><label for="recipientInput" data-i18n="Email or saved name"></label><input id="recipientInput" maxlength="254" autocomplete="off" required><label for="recipientName" data-i18n="Remember as (optional)"></label><input id="recipientName" maxlength="80" data-i18n-placeholder="Name example"><button id="inviteButton" type="submit" class="wide" data-i18n="Share"></button></form>
+<dialog id="shareDialog"><div class="dialog-heading"><h2 data-i18n="Share list">Listeyi paylaş</h2><button type="button" class="close-button secondary" data-close="shareDialog" data-i18n="Close">Kapat</button></div>
+  <p class="muted" data-i18n="Share help">E-posta adresini gir veya daha önce kaydettiğin birini seç. Karşı tarafın aynı BuyMe sunucusunda hesabı olmalı. E-posta gönderilmez.</p>
+  <form id="shareForm"><label for="recipientInput" data-i18n="Email or saved name">E-posta veya kayıtlı kişi adı</label><input id="recipientInput" maxlength="254" autocomplete="off" required><label for="recipientName" data-i18n="Remember as (optional)">Şu adla hatırla (isteğe bağlı)</label><input id="recipientName" maxlength="80" placeholder="Örn. Ayşe" data-i18n-placeholder="Name example"><button id="inviteButton" type="submit" class="wide" data-i18n="Share">Paylaş</button></form>
   <p id="shareStatus" role="status"></p><div id="contactSuggestions" class="contact-suggestions"></div>
-  <h3 data-i18n="People with access"></h3><div id="membersContainer"></div>
+  <h3 data-i18n="People with access">Listeye erişen kişiler</h3><div id="membersContainer"></div>
 </dialog>
-<dialog id="settingsDialog"><div class="dialog-heading"><h2 data-i18n="Settings"></h2><button type="button" class="close-button secondary" data-close="settingsDialog" data-i18n="Close"></button></div>
+<dialog id="settingsDialog"><div class="dialog-heading"><h2 data-i18n="Settings">Ayarlar</h2><button type="button" class="close-button secondary" data-close="settingsDialog" data-i18n="Close">Kapat</button></div>
   <p id="settingsStatus" role="status"></p>
-  <section><h3 data-i18n="Appearance"></h3><label for="themeSelect" data-i18n="Theme"></label><select id="themeSelect"><option value="light" data-i18n="Light"></option><option value="dark" data-i18n="Dark"></option><option value="system" data-i18n="System"></option></select><label for="accentSelect" data-i18n="Color"></label><select id="accentSelect"><option value="purple" data-i18n="Purple"></option><option value="green" data-i18n="Green"></option><option value="blue" data-i18n="Blue"></option><option value="rose" data-i18n="Rose"></option></select><label for="sizeSelect" data-i18n="Text size"></label><select id="sizeSelect"><option value="normal" data-i18n="Normal"></option><option value="large" data-i18n="Large"></option></select></section>
-  <section id="accountSettings"><h3 data-i18n="Account"></h3><p id="accountEmail" class="muted"></p><form id="profileForm"><label for="usernameInput" data-i18n="Your name"></label><input id="usernameInput" maxlength="80" required><div id="legacyEmailRow" hidden><p class="muted" data-i18n="Legacy help"></p><label for="profileEmail" data-i18n="Email"></label><input id="profileEmail" type="email" maxlength="254"><label for="profilePassword" data-i18n="Current password"></label><input id="profilePassword" type="password" maxlength="200" autocomplete="current-password"></div><button id="saveUsernameButton" class="wide" type="submit" data-i18n="Save"></button></form><button id="logoutButton" type="button" class="danger secondary" data-i18n="Logout"></button></section>
-  <section><h3 data-i18n="Backups"></h3><button id="exportButton" class="secondary" type="button" data-i18n="Export backup"></button><label for="importInput" data-i18n="Import backup"></label><input id="importInput" type="file" accept="application/json,.json"></section>
+  <section><h3 data-i18n="Appearance">Görünüm</h3><label for="themeSelect" data-i18n="Theme">Tema</label><select id="themeSelect"><option value="light" data-i18n="Light">Açık</option><option value="dark" data-i18n="Dark">Koyu</option><option value="system" data-i18n="System">Sistem</option></select><label for="accentSelect" data-i18n="Color">Renk</label><select id="accentSelect"><option value="purple" data-i18n="Purple">Mor</option><option value="green" data-i18n="Green">Yeşil</option><option value="blue" data-i18n="Blue">Mavi</option><option value="rose" data-i18n="Rose">Pembe</option></select><label for="sizeSelect" data-i18n="Text size">Yazı boyutu</label><select id="sizeSelect"><option value="normal" data-i18n="Normal">Normal</option><option value="large" data-i18n="Large">Büyük</option></select></section>
+  <section id="accountSettings"><h3 data-i18n="Account">Hesap</h3><p id="accountEmail" class="muted"></p><form id="profileForm"><label for="usernameInput" data-i18n="Your name">Adınız</label><input id="usernameInput" maxlength="80" required><div id="legacyEmailRow" hidden><p class="muted" data-i18n="Legacy help">Eski hesabın korunuyor. E-posta ile giriş ve paylaşım için e-postanı ve mevcut şifreni gir, ardından Kaydet’e bas.</p><label for="profileEmail" data-i18n="Email">E-posta</label><input id="profileEmail" type="email" maxlength="254"><label for="profilePassword" data-i18n="Current password">Mevcut şifre</label><input id="profilePassword" type="password" maxlength="200" autocomplete="current-password"></div><button id="saveUsernameButton" class="wide" type="submit" data-i18n="Save">Kaydet</button></form><button id="logoutButton" type="button" class="danger secondary" data-i18n="Logout">Çıkış yap</button></section>
+  <section><h3 data-i18n="Backups">Yedekler</h3><button id="exportButton" class="secondary" type="button" data-i18n="Export backup">Yedeği dışa aktar</button><label for="importInput" data-i18n="Import backup">Yedek içe aktar</label><input id="importInput" type="file" accept="application/json,.json"></section>
 </dialog>
 </body>
 </html>

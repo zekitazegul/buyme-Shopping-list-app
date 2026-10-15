@@ -71,3 +71,13 @@ test('all languages, settings, dialogs and preferences update live and survive r
     await page.locator('#languageSelect').selectOption('nl');await page.locator('#settingsButton').click();assert.equal(await page.locator('#settingsDialog h2').textContent(),'Instellingen');await page.locator('#themeSelect').selectOption('dark');await page.locator('#accentSelect').selectOption('rose');await page.locator('#sizeSelect').selectOption('large');await closeDialog(page,'settingsDialog');
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.reload();await page.locator('#guestButton').click();assert.equal(await page.locator('#languageSelect').inputValue(),'nl');assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assert.equal(await page.locator('html').getAttribute('data-accent'),'rose');assert.equal(await page.locator('html').getAttribute('data-size'),'large');assert.deepEqual(errors,[]);await context.close();
 });
+test('missing language script leaves readable labels and safe recovery instructions',async()=>{
+    const context=await browser.newContext(),page=await context.newPage();
+    await page.route('**/i18n.js',route=>route.abort());await page.goto(base);
+    assert.equal(await page.locator('#loginButton').textContent(),'Giriş yap');
+    assert.equal(await page.locator('#emailLabel').textContent(),'E-posta veya eski kullanıcı adı');
+    assert.match(await page.locator('#startupNotice').textContent(),/sunucuyu yeniden başlat/);
+    assert(await page.locator('#startupNotice').isVisible());
+    assert.equal(await page.locator('main').evaluate(el=>el.inert),true);
+    await context.close();
+});
