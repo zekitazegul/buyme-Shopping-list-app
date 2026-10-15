@@ -155,7 +155,10 @@ function renderProducts() {
     $('progressText').textContent = t('{done} of {total} purchased', { done: purchased, total: allProducts.length });
     $('shoppingProgress').max = allProducts.length || 1; $('shoppingProgress').value = purchased;
     $('clearPurchasedButton').disabled = !purchased;
-    const products = market.products.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!searchQuery || searchText(p.name).includes(searchText(searchQuery))));
+    const statusOrder = { pending: 0, not_found: 1, purchased: 2 };
+    const products = market.products
+        .filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!searchQuery || searchText(p.name).includes(searchText(searchQuery))))
+        .sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
     const list = textElement('ul', '', 'product-list');
     if (!products.length) list.append(textElement('li', t(market.products.length ? 'No matching products' : 'No products yet'), 'empty-message'));
     for (const product of products) {
