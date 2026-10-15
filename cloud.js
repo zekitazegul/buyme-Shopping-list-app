@@ -17,17 +17,18 @@
             return result;
         }
         async session() { const result = await this.request('/session'); this.available = true; return result; }
-        login(username, password) { return this.request('/login', 'POST', { username, password }); }
-        signup(username, password) { return this.request('/signup', 'POST', { username, password }); }
+        login(email, password) { return this.request('/login', 'POST', { email, password }); }
+        signup(email, password, name) { return this.request('/signup', 'POST', { email, password, name }); }
         logout() { return this.request('/logout', 'POST', {}); }
         profile(user) { return Promise.resolve(user); }
-        rename(user, username) { return this.request('/profile', 'PATCH', { username }); }
+        rename(profile) { return this.request('/profile', 'PATCH', profile); }
+        contacts() { return this.request('/contacts'); }
         lists() { return this.request('/lists'); }
         list(id) { return this.request(`/lists/${encodeURIComponent(id)}`); }
         members(id) { return this.request(`/lists/${encodeURIComponent(id)}/members`); }
         create(document) { return this.request('/lists', 'POST', { document }); }
         save(id, version, document) { return this.request(`/lists/${encodeURIComponent(id)}`, 'PUT', { version, document }); }
-        invite(id, username) { return this.request(`/lists/${encodeURIComponent(id)}/members`, 'POST', { username }); }
+        invite(id, recipient) { return this.request(`/lists/${encodeURIComponent(id)}/members`, 'POST', recipient); }
     }
     root.BuyMeCloud = Cloud;
 })(globalThis);

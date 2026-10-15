@@ -1,365 +1,343 @@
 'use strict';
-const { normalize, documentOf, Storage, createId, statuses } = window.BuyMeCore;
+const { normalize, documentOf, Storage, createId, statuses, searchText } = window.BuyMeCore;
+const i18n = window.BuyMeI18n, t = (key, values) => i18n.t(key, values);
 const $ = id => document.getElementById(id);
 let browserStorage;
 try { browserStorage = window.localStorage; }
-catch { browserStorage = { getItem() { throw new Error('Storage blocked'); }, setItem() { throw new Error('Storage blocked'); } }; }
-const storage = new Storage(browserStorage, () => {
-    $('storageWarning').hidden = false;
-});
-let data = storage.load(), user = null, cloud = null, cloudLists = [];
-let epoch = 0, generation = 0, saving = false, saveTimer, blocked = false, cloudReady = false, authBusy = false;
-cloud = new window.BuyMeCloud();
-let searchQuery = "", statusFilter = "all";
-
-function announceSession() { try { browserStorage.setItem('buyme:session', String(Date.now())); } catch { /* The session cookie still works. */ } }
-function message(text, error = false) {
-    $('appStatus').textContent = text;
-    $('appStatus').classList.toggle('error', error);
+catch { browserStorage = { getItem() { throw Error('Storage blocked'); }, setItem() { throw Error('Storage blocked'); } }; }
+const storage = new Storage(browserStorage, () => { $('storageWarning').hidden = false; });
+const preferences = { language: 'tr', theme: 'light', accent: 'purple', size: 'normal' };
+try { const saved = JSON.parse(browserStorage.getItem('buymePreferences') || '{}'); for (const key of Object.keys(preferences)) if (typeof saved[key] === 'string') preferences[key] = saved[key]; } catch { /* Defaults remain usable. */ }
+let data = storage.load(), user = null, cloudLists = [], contacts = [];
+const cloud = new window.BuyMeCloud();
+let epoch = 0, generation = 0, saving = false, creating = null, saveTimer, blocked = false, cloudReady = false, authBusy = false;
+let searchQuery = '', statusFilter = 'all', activeMarket = '', guestMode = false, signupMode = false;
+const messages = new Map();
+function status(id, key, values = {}, error = false) {
+    messages.set(id, { key, values, error });
+    $(id).textContent = key ? t(key, values) : '';
+    $(id).classList.toggle('error', error);
 }
-function cloudError(error) {
-    if (error?.code === 'CONFLICT') return 'Another member changed this list. Your changes are kept on this device. Export them before loading the latest shared list.';
-    if (error?.code === 'SERVER_UNAVAILABLE') return 'Sharing server is unavailable. Local lists still work. Start the Node server as described in the README.';
-    return 'Cloud action failed. Your local changes are kept. Check your connection and try again.';
+function errorKey(error) {
+    if (i18n.catalog[error?.message]) return error.message;
+    if (i18n.catalog[error?.code]) return error.code;
+    return 'Connection error';
 }
+function fail(error, id = 'appStatus') { status(id, errorKey(error), {}, true); }
+function guard(action, id) { return async (...args) => { try { await action(...args); } catch (error) { fail(error, id); } }; }
 function persist() { storage.save(data, user?.id); }
-function changed() {
-    generation++;
-    data.dirty = Boolean(user && data.listId);
-    persist(); render();
-    if (data.dirty) {
-        $('syncStatus').textContent = 'Changes saved on this device; waiting to sync.';
-        clearTimeout(saveTimer); saveTimer = setTimeout(sync, 200);
-    }
-}
-async function sync() {
-    if (!cloud || !cloudReady || !user || !data.listId || !data.dirty || saving || blocked) return;
-    const sessionEpoch = epoch, listId = data.listId;
-    saving = true;
-    try {
-        while (data.dirty && sessionEpoch === epoch && data.listId === listId) {
-            const sentGeneration = generation;
-            const snapshot = JSON.parse(JSON.stringify(documentOf(data)));
-            $('syncStatus').textContent = 'Syncing…';
-            const record = await cloud.save(listId, data.version, snapshot);
-            if (sessionEpoch !== epoch || data.listId !== listId) return;
-            data.version = record.version;
-            data.dirty = generation !== sentGeneration;
-            persist();
-        }
-        if (sessionEpoch === epoch) $('syncStatus').textContent = 'Shared list is up to date.';
-    } catch (error) {
-        if (sessionEpoch === epoch) {
-            blocked = error.code === 'CONFLICT';
-            $('syncStatus').textContent = cloudError(error);
-        }
-    } finally {
-        if (sessionEpoch === epoch) saving = false;
-    }
+function announceSession() { try { browserStorage.setItem('buyme:session', String(Date.now())); } catch { /* Cookie works without browser storage. */ } }
+function savePreferences() { try { browserStorage.setItem('buymePreferences', JSON.stringify(preferences)); } catch { $('storageWarning').hidden = false; } }
+function applyPreferences() {
+    i18n.setLanguage(preferences.language); preferences.language = i18n.language;
+    document.documentElement.lang = i18n.language;
+    document.documentElement.dataset.theme = ['light','dark','system'].includes(preferences.theme) ? preferences.theme : 'light';
+    document.documentElement.dataset.accent = ['purple','green','blue','rose'].includes(preferences.accent) ? preferences.accent : 'purple';
+    document.documentElement.dataset.size = preferences.size === 'large' ? 'large' : 'normal';
+    for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+    for (const el of document.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
+    for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
+    $('languageSelect').setAttribute('aria-label', t('Language'));
+    for (const [id,key] of [['languageSelect','language'],['themeSelect','theme'],['accentSelect','accent'],['sizeSelect','size']]) $(id).value = preferences[key];
+    for (const [id, msg] of messages) status(id, msg.key, msg.values, msg.error);
+    renderListOptions(); render();
 }
 function button(label, action, className = '') {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
     b.className = className; b.addEventListener('click', action); return b;
 }
-function textElement(tag, text, className = '') {
-    const el = document.createElement(tag); el.textContent = text; el.className = className; return el;
+function textElement(tag, text, className = '') { const el = document.createElement(tag); el.textContent = text; el.className = className; return el; }
+function listTitle(record) { return record.listName && record.listName !== 'My Shopping List' ? record.listName : record.markets.map(m => m.name).join(' · ') || t('Shopping list'); }
+function selectedMarket() { return data.markets.find(m => m.id === activeMarket); }
+function changed() {
+    generation++; data.dirty = Boolean(user); persist(); render();
+    if (user) {
+        status('syncStatus', 'Waiting to sync');
+        clearTimeout(saveTimer); saveTimer = setTimeout(() => saveToAccount().catch(fail), 250);
+    }
+}
+async function ensureList() {
+    if (!user || !cloudReady) throw Object.assign(Error(), { code: 'UNAUTHORIZED' });
+    if (data.listId) return;
+    if (creating) return creating;
+    const sessionEpoch = epoch;
+    const task = (async () => {
+        const record = await cloud.create(documentOf(data));
+        if (epoch !== sessionEpoch) return;
+        data.listId = record.id; data.ownerId = user.id; data.owner = user.name; data.members = [user.name]; data.version = record.version;
+        data.dirty = true; persist(); await refreshLists();
+    })();
+    creating = task; render();
+    try { await task; } finally { if (creating === task) { creating = null; render(); } }
+}
+async function saveToAccount() {
+    if (!user || !cloudReady) return;
+    const sessionEpoch = epoch;
+    await ensureList(); if (sessionEpoch !== epoch) return;
+    await sync(); render();
+}
+async function sync() {
+    if (!cloudReady || !user || !data.listId || !data.dirty || saving || blocked) return;
+    const sessionEpoch = epoch, id = data.listId;
+    saving = true;
+    try {
+        while (data.dirty && sessionEpoch === epoch && id === data.listId) {
+            const sentGeneration = generation, snapshot = structuredClone(documentOf(data));
+            status('syncStatus', 'Syncing');
+            const record = await cloud.save(id, data.version, snapshot);
+            if (sessionEpoch !== epoch || id !== data.listId) return;
+            data.version = record.version; data.dirty = generation !== sentGeneration; persist();
+        }
+        if (sessionEpoch === epoch) status('syncStatus', 'Up to date');
+    } catch (error) {
+        if (sessionEpoch === epoch) { blocked = error.code === 'CONFLICT'; fail(error, 'syncStatus'); }
+    } finally { if (sessionEpoch === epoch) { saving = false; render(); } }
 }
 function renameRow(element, original, save) {
-    const input = document.createElement('input'); input.value = original; input.maxLength = 200;
-    input.setAttribute('aria-label', 'New name');
-    const row = document.createElement('div'); row.className = 'inline-edit';
+    const input = document.createElement('input'); input.value = original; input.maxLength = 200; input.setAttribute('aria-label', t('New name'));
+    const row = textElement('div', '', 'inline-edit');
     const commit = () => { const value = input.value.trim(); if (value) save(value); else input.focus(); };
-    row.append(input, button('Save', commit), button('Cancel', render)); element.replaceWith(row);
-    input.addEventListener('keydown', event => {
-        if (event.key === 'Enter') { event.preventDefault(); commit(); }
-        if (event.key === 'Escape') { event.preventDefault(); render(); }
-    });
+    row.append(input, button(t('Save'), commit), button(t('Cancel'), render)); element.replaceWith(row);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') render(); });
     input.focus(); input.select();
 }
 function render() {
-    for (const [id, value] of [['usernameInput', data.username], ['listNameInput', data.listName], ['locationInput', data.location]]) {
-        if (document.activeElement !== $(id)) $(id).value = value;
+    $('authScreen').hidden = Boolean(user) || guestMode;
+    $('shoppingScreen').hidden = !user && !guestMode;
+    $('accountSettings').hidden = !user;
+    $('savedListsSection').hidden = !user && !data.markets.length;
+    $('sharedListSelect').hidden = !user;
+    $('reloadListButton').hidden = !user;
+    $('signupNameRow').hidden = !signupMode;
+    $('loginButton').hidden = signupMode; $('signupButton').hidden = !signupMode;
+    $('loginTab').setAttribute('aria-pressed', String(!signupMode)); $('signupTab').setAttribute('aria-pressed', String(signupMode));
+    $('passwordInput').autocomplete = signupMode ? 'new-password' : 'current-password';
+    $('emailInput').type = signupMode ? 'email' : 'text';
+    $('emailLabel').textContent = t(signupMode ? 'Email' : 'Email or old username');
+    for (const id of ['loginButton','signupButton']) $(id).disabled = !cloud.available || authBusy;
+    $('shareOpenButton').disabled = Boolean(creating);
+    $('saveOnlineButton').hidden = !user || Boolean(data.listId);
+    $('saveOnlineButton').disabled = !cloudReady || Boolean(creating);
+    $('newLocalButton').disabled = Boolean(creating) || saving;
+    $('sharedListSelect').disabled = !cloudReady;
+    $('reloadListButton').disabled = !cloudReady || saving;
+    $('retrySyncButton').hidden = !user || !data.dirty;
+    $('greeting').textContent = user ? t('Hello {name}', { name: user.name }) : t('Local mode');
+    $('accountEmail').textContent = user?.email || user?.username || '';
+    $('legacyEmailRow').hidden = !user || Boolean(user.email);
+    if (document.activeElement !== $('usernameInput')) $('usernameInput').value = user?.name || '';
+    if (document.activeElement !== $('listNameInput')) $('listNameInput').value = data.listName === 'My Shopping List' ? '' : data.listName;
+    const market = selectedMarket(); if (!market) activeMarket = data.markets[0]?.id || '';
+    renderMarketChoices(); renderProducts(); renderContacts(); renderMembers();
+}
+function renderMarketChoices() {
+    const names = [...new Set([...data.markets.map(m => m.name), 'Albert Heijn', 'Lidl', 'Aldi', 'Jumbo', 'Dirk', 'Plus'])];
+    $('marketChoices').replaceChildren();
+    for (const name of names) {
+        const existing = data.markets.find(m => m.name === name);
+        const b = button(name, () => {
+            if (existing) { activeMarket = existing.id; render(); }
+            else { const market = { id: createId(), name, products: [] }; data.markets.push(market); activeMarket = market.id; changed(); }
+            $('productNameInput').focus();
+        }, 'market-choice');
+        b.setAttribute('aria-pressed', String(existing?.id === activeMarket));
+        $('marketChoices').append(b);
     }
-    $('usernameDisplay').textContent = data.username ? `User: ${data.username}` : '';
-    $('listOwnerDisplay').textContent = data.owner ? `Owner: ${data.owner}` : '';
-    $('locationDisplay').textContent = data.location ? `Location: ${data.location}` : '';
-    $('logoutButton').hidden = !user;
-    $('loginButton').disabled = !cloud.available || authBusy || Boolean(user);
-    $('signupButton').disabled = !cloud.available || authBusy || Boolean(user);
-    $('emailInput').disabled = Boolean(user) || authBusy;
-    $('passwordInput').disabled = Boolean(user) || authBusy;
-    $('saveUsernameButton').disabled = authBusy;
-    $('shareButton').disabled = !cloudReady || !user || Boolean(data.listId) || authBusy;
-    $('sharedListSelect').disabled = !cloudReady || !user || authBusy;
-    $('newLocalButton').disabled = authBusy || saving;
-    $('inviteButton').hidden = !(user && cloudReady && data.listId && data.ownerId === user.id);
-    $('membersContainer').replaceChildren();
-    for (const member of data.members) {
-        const row = textElement('div', '', 'member-item');
-        row.append(textElement('span', member), textElement('span', member === data.owner ? 'Owner' : 'Member', 'member-role'));
-        $('membersContainer').append(row);
-    }
-    if (!data.members.length) $('membersContainer').append(textElement('p', data.listId ? 'No members loaded.' : 'Local list. Share it after signing in to invite members.', 'empty-message'));
-    const products = data.markets.flatMap(m => m.products);
-    const purchased = products.filter(p => p.status === 'purchased').length;
-    $('progressText').textContent = `${purchased} of ${products.length} purchased`;
-    $('shoppingProgress').max = products.length || 1;
-    $('shoppingProgress').value = purchased;
+}
+function renderProducts() {
+    const market = selectedMarket(); $('itemsSection').hidden = !market;
+    $('marketsContainer').replaceChildren(); if (!market) return;
+    $('activeMarketName').textContent = market.name;
+    const allProducts = data.markets.flatMap(m => m.products), purchased = allProducts.filter(p => p.status === 'purchased').length;
+    $('progressText').textContent = t('{done} of {total} purchased', { done: purchased, total: allProducts.length });
+    $('shoppingProgress').max = allProducts.length || 1; $('shoppingProgress').value = purchased;
     $('clearPurchasedButton').disabled = !purchased;
-    renderMarkets();
-}
-function renderMarkets() {
-    $('marketsContainer').replaceChildren();
-    if (!data.markets.length) $('marketsContainer').append(textElement('p', 'No markets added yet.', 'empty-markets'));
-    let matchingMarkets = 0;
-    for (const market of data.markets) {
-        const visibleProducts = market.products.filter(p =>
-            (statusFilter === 'all' || p.status === statusFilter) &&
-            (!searchQuery || `${market.name} ${p.name}`.toLocaleLowerCase().includes(searchQuery)));
-        if ((searchQuery || statusFilter !== 'all') && !visibleProducts.length) continue;
-        matchingMarkets++;
-        const box = textElement('section', '', 'market'); box.dataset.marketId = market.id;
-        const header = textElement('div', '', 'market-header');
-        const name = button(`Market: ${market.name}`, () => renameRow(name, market.name, value => { market.name = value; changed(); }), 'market-name');
-        header.append(name, button('Delete', () => {
-            if (confirm(`Delete "${market.name}" and its ${market.products.length} product(s)?`)) {
-                data.markets = data.markets.filter(m => m.id !== market.id); changed();
-            }
-        }, 'delete-market'));
-        const list = textElement('ul', '', 'product-list');
-        if (!market.products.length) list.append(textElement('li', 'No products yet.', 'empty-message'));
-        for (const product of visibleProducts) {
-            const row = textElement('li', '', 'product-item'); row.dataset.productId = product.id;
-            const css = product.status === 'purchased' ? 'purchased' : product.status === 'not_found' ? 'not-found' : '';
-            const label = product.status === 'purchased' ? 'Purchased' : product.status === 'not_found' ? 'Not found' : 'Pending';
-            const status = button(label, () => { product.status = statuses[(statuses.indexOf(product.status) + 1) % statuses.length]; changed(); }, `status-button ${css}`);
-            status.setAttribute('aria-label', `Change status of ${product.name}: ${label}`);
-            const title = button(product.name, () => renameRow(title, product.name, value => { product.name = value; changed(); }), `product-name ${css}`);
-            title.title = 'Edit product';
-            row.append(status, title, button('Delete', () => {
-                if (confirm(`Delete "${product.name}"?`)) { market.products = market.products.filter(p => p.id !== product.id); changed(); }
-            }, 'delete-product')); list.append(row);
-        }
-        const add = textElement('form', '', 'add-product-row');
-        const input = document.createElement('input'); input.placeholder = 'Add product…'; input.maxLength = 200;
-        input.setAttribute('aria-label', `Add product to ${market.name}`);
-        const submit = button('+ Add', () => {}); submit.type = 'submit';
-        add.append(input, submit);
-        add.addEventListener('submit', event => {
-            event.preventDefault(); const name = input.value.trim(); if (!name) return input.focus();
-            market.products.push({ id: createId(), name, status: 'pending' }); changed();
-            const replacement = [...$('marketsContainer').querySelectorAll('.market')].find(m => m.dataset.marketId === market.id);
-            replacement?.querySelector('.add-product-row input')?.focus();
-        });
-        box.append(header, list, add); $('marketsContainer').append(box);
+    const products = market.products.filter(p => (statusFilter === 'all' || p.status === statusFilter) && (!searchQuery || searchText(p.name).includes(searchText(searchQuery))));
+    const list = textElement('ul', '', 'product-list');
+    if (!products.length) list.append(textElement('li', t(market.products.length ? 'No matching products' : 'No products yet'), 'empty-message'));
+    for (const product of products) {
+        const row = textElement('li', '', 'product-item'); row.dataset.productId = product.id;
+        const key = product.status === 'purchased' ? 'Purchased' : product.status === 'not_found' ? 'Not found' : 'Pending';
+        const statusButton = button(t(key), () => { product.status = statuses[(statuses.indexOf(product.status)+1)%statuses.length]; changed(); }, `status-button ${product.status}`);
+        statusButton.setAttribute('aria-label', t('Change status of {name}: {status}', { name: product.name, status: t(key) }));
+        const title = button(product.name, () => renameRow(title, product.name, value => { product.name = value; changed(); }), `product-name ${product.status}`); title.title = t('Edit product');
+        row.append(statusButton, title, button(t('Delete'), () => { if (confirm(t('Delete {name}?', { name: product.name }))) { market.products = market.products.filter(p => p.id !== product.id); changed(); } }, 'delete-product'));
+        list.append(row);
     }
-    if (data.markets.length && !matchingMarkets) $('marketsContainer').append(textElement('p', 'No matching products. Try another search or filter.', 'empty-markets'));
+    $('marketsContainer').append(list);
 }
-$('productSearch').addEventListener('input', event => { searchQuery = event.target.value.trim().toLocaleLowerCase(); renderMarkets(); });
-for (const filter of document.querySelectorAll('[data-filter]')) filter.addEventListener('click', () => {
-    statusFilter = filter.dataset.filter;
-    for (const item of document.querySelectorAll('[data-filter]')) item.setAttribute('aria-pressed', String(item === filter));
-    renderMarkets();
-});
-$('clearPurchasedButton').addEventListener('click', () => {
-    if (!confirm('Remove all purchased products from this list?')) return;
-    for (const market of data.markets) market.products = market.products.filter(p => p.status !== 'purchased');
-    changed();
-});
-function guard(action) {
-    return async (...args) => {
-        try { await action(...args); }
-        catch (error) { message(cloudError(error), true); }
-    };
+function renderMembers() {
+    $('membersContainer').replaceChildren();
+    for (const name of data.members) { const row = textElement('div', '', 'member-item'); row.append(textElement('span', name), textElement('span', t(name === data.owner ? 'Owner' : 'Member'), 'muted')); $('membersContainer').append(row); }
+    if (!data.listId) $('membersContainer').append(textElement('p', t('Local list help'), 'muted'));
+    $('inviteButton').disabled = !cloudReady || (Boolean(data.listId) && data.ownerId !== user?.id);
 }
-async function refreshLists() {
-    const sessionEpoch = epoch;
-    const lists = await cloud.lists();
-    if (sessionEpoch !== epoch) return;
-    cloudLists = lists;
-    $('sharedListSelect').replaceChildren(new Option('Choose a shared list…', ''));
-    for (const list of lists) $('sharedListSelect').append(new Option(list.document.listName || 'Shopping list', list.id));
+function renderContacts() {
+    $('contactSuggestions').replaceChildren();
+    const q = searchText($('recipientInput').value.trim());
+    for (const person of contacts.filter(c => !q || searchText(`${c.name} ${c.email}`).includes(q))) {
+        const b = button('', () => { $('recipientInput').value = person.email; $('recipientName').value = person.name; renderContacts(); }, 'contact-chip');
+        b.append(textElement('strong', person.name), textElement('small', person.email)); $('contactSuggestions').append(b);
+    }
+}
+function renderListOptions() {
+    $('sharedListSelect').replaceChildren(new Option(t('Choose a list'), ''));
+    for (const list of cloudLists) $('sharedListSelect').append(new Option(listTitle(list.document), list.id));
     $('sharedListSelect').value = data.listId;
 }
+async function refreshLists() {
+    const sessionEpoch = epoch, lists = await cloud.lists();
+    if (sessionEpoch !== epoch) return;
+    cloudLists = lists; renderListOptions();
+}
+async function refreshContacts() { const sessionEpoch = epoch, result = await cloud.contacts(); if (sessionEpoch === epoch) { contacts = result; renderContacts(); } }
 async function openList(id, discard = false) {
     if (!id) return;
-    if (data.dirty && !discard && !confirm('Replace your unsynced local changes? Export a backup first if you want to keep them.')) return;
+    if (data.dirty && !discard && !confirm(t('Confirm replace'))) return;
     const sessionEpoch = epoch, localGeneration = generation;
     const record = await cloud.list(id), members = await cloud.members(id);
     if (sessionEpoch !== epoch) return;
-    if (localGeneration !== generation) { message('You edited this list while loading. Your changes were kept; choose the shared list again when ready.', true); return; }
-    data = normalize({ ...record.document, listId: record.id, version: record.version, ownerId: record.owner_id,
-        username: data.username, owner: members.find(m => m.role === 'owner')?.username || '', members: members.map(m => m.username) });
-    generation++; blocked = false; persist(); render();
-    $('sharedListSelect').value = data.listId;
-    $('syncStatus').textContent = 'Shared list is up to date.';
+    if (localGeneration !== generation) return status('appStatus', 'Changed while loading', {}, true);
+    data = normalize({ ...record.document, listId: record.id, version: record.version, ownerId: record.owner_id, username: user.name,
+        owner: members.find(m => m.role === 'owner')?.name || '', members: members.map(m => m.name) });
+    generation++; blocked = false; activeMarket = data.markets[0]?.id || ''; persist(); render(); renderListOptions(); status('syncStatus', 'Up to date');
 }
 async function transition(session) {
     const nextUser = session?.user || null;
     if (nextUser?.id === user?.id && Boolean(nextUser) === Boolean(user)) { render(); return; }
-    epoch++; clearTimeout(saveTimer); saving = false; blocked = false; cloudReady = false;
-    user = nextUser; data = storage.load(user?.id); cloudLists = [];
-    $('sharedListSelect').replaceChildren(new Option('Choose a shared list…', ''));
-    $('passwordInput').value = '';
-    $('authStatus').textContent = user ? `Signed in: ${user.username}` : 'Local mode. Sign in only if you want to share lists.';
-    $('syncStatus').textContent = ''; render();
-    if (!user) return;
+    epoch++; clearTimeout(saveTimer); saving = false; creating = null; blocked = false; cloudReady = false;
+    user = nextUser; data = storage.load(user?.id); cloudLists = []; contacts = []; activeMarket = '';
+    $('passwordInput').value = ''; $('recipientInput').value = ''; $('recipientName').value = '';
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+    status('syncStatus', ''); renderListOptions(); render();
+    if (!user) { signupMode = false; render(); return; }
     const sessionEpoch = epoch;
     try {
-        const profile = await cloud.profile(user);
-        if (sessionEpoch !== epoch) return;
-        data.username = profile.username; persist();
-        await refreshLists(); if (sessionEpoch !== epoch) return;
+        data.username = user.name; persist();
+        await refreshLists(); await refreshContacts(); if (sessionEpoch !== epoch) return;
         cloudReady = true;
         if (data.listId && !data.dirty) await openList(data.listId, true);
-        else if (data.dirty) $('syncStatus').textContent = 'Unsynced changes recovered on this device. Retry sync or export a backup.';
-        message('Signed in. Choose a shared list, or share your current local list.'); render();
-    } catch (error) { if (sessionEpoch === epoch) { message(cloudError(error), true); render(); } }
+        else if (data.dirty) status('syncStatus', 'Recovered edits');
+        else if (!data.markets.length && cloudLists.length) await openList(cloudLists[0].id, true);
+        status('authStatus', 'Signed in'); render();
+    } catch (error) { if (sessionEpoch === epoch) { fail(error); render(); } }
 }
-async function authenticate(signup) {
+async function authenticate() {
     if (!cloud.available || authBusy) return;
-    const email = $('emailInput').value.trim(), password = $('passwordInput').value;
-    if (!email || !password) { $('authStatus').textContent = 'Please enter your account username and password.'; return; }
-    if (signup && password.length < 8) { $('authStatus').textContent = 'Use a password with at least 8 characters.'; return; }
-    authBusy = true; render(); $('authStatus').textContent = signup ? 'Creating account…' : 'Logging in…';
+    authBusy = true; render(); status('authStatus', signupMode ? 'Creating account' : 'Signing in');
     try {
-        const result = signup ? await cloud.signup(email, password) : await cloud.login(email, password);
-        $('passwordInput').value = '';
-        await transition({ user: result.user });
-        announceSession();
-    } catch (error) { $('authStatus').textContent = error.message || 'Sign-in failed. Please try again.'; }
+        const email = $('emailInput').value.trim(), password = $('passwordInput').value;
+        const result = signupMode ? await cloud.signup(email,password,$('signupName').value.trim()) : await cloud.login(email,password);
+        await transition({ user: result.user }); announceSession(); status('appStatus', '');
+    } catch (error) { fail(error, 'authStatus'); }
     finally { authBusy = false; render(); }
 }
-$('loginButton').addEventListener('click', () => authenticate(false));
-$('signupButton').addEventListener('click', () => authenticate(true));
-$('passwordInput').addEventListener('keydown', event => { if (event.key === 'Enter') authenticate(false); });
+$('authForm').addEventListener('submit', e => { e.preventDefault(); authenticate(); });
+$('loginTab').addEventListener('click', () => { signupMode = false; render(); });
+$('signupTab').addEventListener('click', () => { signupMode = true; render(); });
+$('guestButton').addEventListener('click', () => { guestMode = true; render(); });
 $('logoutButton').addEventListener('click', guard(async () => {
-    if (data.dirty && !confirm('Unsynced changes are kept on this device for this account. Log out?')) return;
-    await cloud.logout();
-    announceSession();
-    await transition(null); message('Logged out. Your local list is shown.');
+    if (data.dirty && !confirm(t('Confirm logout'))) return;
+    await cloud.logout(); guestMode = false; await transition(null); announceSession(); status('authStatus', 'Logged out');
 }));
-$('saveUsernameButton').addEventListener('click', guard(async () => {
-    const name = $('usernameInput').value.trim();
-    if (name.length < 2 || name.length > 40) return message('Use a name with 2–40 characters.', true);
-    if (user) {
-        const sessionEpoch = epoch;
-        const profile = await cloud.rename(user, name); if (sessionEpoch !== epoch) return;
-        user = profile; $('authStatus').textContent = `Signed in: ${profile.username}`;
-    }
-    const previousName = data.username;
-    data.username = user?.username || name;
-    if (data.listId && user?.id === data.ownerId) data.owner = data.username;
-    data.members = data.members.map(member => member === previousName ? data.username : member);
-    if (!data.listId) { data.owner = name; data.members = [name]; }
-    persist(); render(); message('Username saved.');
-}));
-for (const [input, buttonId, field] of [['listNameInput', 'saveListNameButton', 'listName'], ['locationInput', 'saveLocationButton', 'location']]) {
-    const save = () => { const value = $(input).value.trim(); if (!value && field === 'listName') return message('Please enter a list name.', true); data[field] = value; changed(); };
-    $(buttonId).addEventListener('click', save);
-    $(input).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
-}
-$('usernameInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('saveUsernameButton').click(); });
-$('addMarketButton').addEventListener('click', () => { $('addMarketForm').hidden = false; $('addMarketButton').hidden = true; $('marketNameInput').focus(); });
-function cancelMarket() { $('addMarketForm').hidden = true; $('addMarketButton').hidden = false; $('marketNameInput').value = ''; }
-$('cancelMarketButton').addEventListener('click', cancelMarket);
-$('addMarketForm').addEventListener('submit', event => {
-    event.preventDefault(); const name = $('marketNameInput').value.trim(); if (!name) return;
-    data.markets.push({ id: createId(), name, products: [] }); cancelMarket(); changed();
+$('profileForm').addEventListener('submit', guard(async e => {
+    e.preventDefault(); const sessionEpoch = epoch;
+    const profile = { name: $('usernameInput').value.trim() };
+    if (!user.email) { profile.email = $('profileEmail').value.trim(); profile.password = $('profilePassword').value; }
+    const result = await cloud.rename(profile); if (sessionEpoch !== epoch) return;
+    const previous = user.name; user = result; data.username = user.name;
+    data.members = data.members.map(name => name === previous ? user.name : name); if (user.id === data.ownerId) data.owner = user.name;
+    $('profilePassword').value = ''; persist(); render(); status('settingsStatus', 'Profile saved');
+}, 'settingsStatus'));
+$('saveListNameButton').addEventListener('click', () => { data.listName = $('listNameInput').value.trim(); changed(); });
+$('listNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('saveListNameButton').click(); } });
+$('addMarketButton').addEventListener('click', () => { $('addMarketForm').hidden = false; $('marketNameInput').focus(); });
+$('cancelMarketButton').addEventListener('click', () => { $('addMarketForm').hidden = true; $('marketNameInput').value = ''; });
+$('addMarketForm').addEventListener('submit', e => {
+    e.preventDefault(); const name = $('marketNameInput').value.trim(); if (!name) return;
+    let market = data.markets.find(m => m.name.toLocaleLowerCase(i18n.language) === name.toLocaleLowerCase(i18n.language));
+    if (!market) { market = { id: createId(), name, products: [] }; data.markets.push(market); }
+    activeMarket = market.id; $('addMarketForm').hidden = true; $('marketNameInput').value = ''; changed(); $('productNameInput').focus();
 });
-$('marketNameInput').addEventListener('keydown', e => { if (e.key === 'Escape') cancelMarket(); });
-$('inviteButton').addEventListener('click', guard(async () => {
-    const name = prompt('Enter the BuyMe username of an already registered person to add to this list:');
-    if (!name?.trim()) return;
-    if (data.dirty) { await sync(); if (data.dirty) return message('Sync or export your pending edits before adding a member.', true); }
-    await cloud.invite(data.listId, name.trim()); await openList(data.listId, true);
-    message('Member added. They can select this list after signing in.');
+$('productForm').addEventListener('submit', e => {
+    e.preventDefault(); const market = selectedMarket(), name = $('productNameInput').value.trim(); if (!market || !name) return;
+    market.products.push({ id: createId(), name, status: 'pending' }); $('productNameInput').value = ''; changed(); $('productNameInput').focus();
+});
+$('renameMarketButton').addEventListener('click', () => { const market = selectedMarket(); const name = prompt(t('New name'),market.name); if (name?.trim() && name.trim().length <= 200) { market.name = name.trim(); changed(); } });
+$('deleteMarketButton').addEventListener('click', () => { const market = selectedMarket(); if (confirm(t('Delete market {name} with {count} products?', { name: market.name, count: market.products.length }))) { data.markets = data.markets.filter(m => m.id !== market.id); activeMarket = ''; changed(); } });
+$('productSearch').addEventListener('input', e => { searchQuery = e.target.value.trim(); renderProducts(); });
+$('statusFilter').addEventListener('change', e => { statusFilter = e.target.value; renderProducts(); });
+$('clearPurchasedButton').addEventListener('click', () => { if (!confirm(t('Clear purchased?'))) return; for (const market of data.markets) market.products = market.products.filter(p => p.status !== 'purchased'); changed(); });
+$('shareOpenButton').addEventListener('click', guard(async () => {
+    if (!user) { guestMode = false; render(); status('authStatus', 'Login to share'); return; }
+    status('shareStatus', ''); $('shareDialog').showModal(); await refreshContacts();
 }));
-$('shareButton').addEventListener('click', guard(async () => {
-    if (!cloudReady || !user || data.listId || authBusy) return;
-    authBusy = true; render(); const sessionEpoch = epoch;
+$('recipientInput').addEventListener('input', renderContacts);
+$('shareForm').addEventListener('submit', guard(async e => {
+    e.preventDefault(); if (!cloudReady || authBusy) return;
+    const sessionEpoch = epoch, input = $('recipientInput').value.trim(); if (!input) return;
+    const recipient = input.includes('@') ? { email: input } : { name: input };
+    if ($('recipientName').value.trim()) recipient.alias = $('recipientName').value.trim();
+    authBusy = true; $('inviteButton').disabled = true;
     try {
-        const record = await cloud.create(documentOf(data));
-        if (sessionEpoch !== epoch) return;
-        // Keep edits made while the request was in flight; sync them afterwards.
-        data.listId = record.id; data.ownerId = record.owner_id; data.version = record.version;
-        data.owner = data.username; data.members = [data.username]; data.dirty = true;
-        persist(); await refreshLists(); await sync(); render();
-    } finally { authBusy = false; render(); }
-}));
-$('sharedListSelect').addEventListener('change', guard(async event => {
-    const selected = event.target.value;
-    if (!selected) return;
-    if (saving) { $('sharedListSelect').value = data.listId; return message('Wait for the current sync before switching lists.'); }
-    if (!data.listId && data.markets.length && !confirm('Your current local list stays saved only until you switch. Export it first if you want a backup. Open shared list?')) {
-        $('sharedListSelect').value = data.listId; return;
-    }
-    await openList(selected);
-    $('sharedListSelect').value = data.listId;
+        if (data.listId && data.ownerId !== user.id) return status('shareStatus','Owner only',{},true);
+        await saveToAccount(); if (sessionEpoch !== epoch) return;
+        if (data.dirty) return status('shareStatus','Sync first',{},true);
+        await cloud.invite(data.listId,recipient); if (sessionEpoch !== epoch) return;
+        await openList(data.listId,true); await refreshContacts();
+        const person = contacts.find(c => c.email?.toLowerCase() === input.toLowerCase() || c.name.toLowerCase() === input.toLowerCase());
+        status('shareStatus','Shared with {name}', { name: person?.name || input });
+    } catch (error) { if (sessionEpoch === epoch) fail(error,'shareStatus'); }
+    finally { authBusy = false; render(); }
+}, 'shareStatus'));
+$('saveOnlineButton').addEventListener('click', guard(saveToAccount));
+$('sharedListSelect').addEventListener('change', guard(async e => {
+    const id = e.target.value; if (!id) return;
+    if (saving || creating) { renderListOptions(); return status('appStatus','Wait for sync'); }
+    if (!data.listId && data.markets.length && !confirm(t('Confirm switch'))) { renderListOptions(); return; }
+    await openList(id); renderListOptions();
 }));
 $('newLocalButton').addEventListener('click', () => {
-    if (!confirm('Start a new local list? Export a backup first if needed. Shared lists remain in the cloud.')) return;
-    epoch++; clearTimeout(saveTimer); blocked = false;
-    data = normalize({ username: data.username, owner: data.username, members: data.username ? [data.username] : [] });
-    generation++; persist(); render(); $('sharedListSelect').value = ''; $('syncStatus').textContent = '';
+    if ((data.dirty || (!data.listId && data.markets.length)) && !confirm(t('Confirm new list'))) return;
+    epoch++; clearTimeout(saveTimer); blocked = false; creating = null; saving = false;
+    data = normalize({ username: user?.name || '' }); activeMarket = ''; generation++; persist(); render(); renderListOptions(); status('syncStatus','');
 });
 $('retrySyncButton').addEventListener('click', guard(async () => {
-    if (!cloudReady && user) { const session = { user }; user = null; await transition(session); }
-    if (blocked) return message('Export your local changes, then use Load latest to resolve the conflict.', true);
-    await sync(); if (user && cloudReady) await refreshLists();
+    if (!cloudReady && user) { const previous = user; user = null; await transition({user:previous}); }
+    if (blocked) return status('appStatus','Resolve conflict',{},true);
+    await saveToAccount();
 }));
-$('reloadListButton').addEventListener('click', guard(async () => {
-    if (!user || !cloudReady || saving) return;
-    await refreshLists(); if (data.listId) await openList(data.listId);
-}));
+$('reloadListButton').addEventListener('click', guard(async () => { if (!cloudReady || saving) return; await refreshLists(); if (data.listId) await openList(data.listId); }));
+$('settingsButton').addEventListener('click', () => $('settingsDialog').showModal());
+for (const b of document.querySelectorAll('[data-close]')) b.addEventListener('click', () => $(b.dataset.close).close());
+for (const [id,key] of [['languageSelect','language'],['themeSelect','theme'],['accentSelect','accent'],['sizeSelect','size']]) $(id).addEventListener('change', e => { preferences[key] = e.target.value; savePreferences(); applyPreferences(); });
 $('exportButton').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob), a = document.createElement('a');
-    a.href = url; a.download = 'buyme-list.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})), a = document.createElement('a'); a.href = url; a.download = 'buyme-list.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url),1000);
 });
-$('importInput').addEventListener('change', guard(async event => {
-    const file = event.target.files[0]; event.target.value = '';
-    if (!file) return;
-    if (file.size > 1000000) return message('Backup is too large (maximum 1 MB).', true);
-    const sessionEpoch = epoch, localGeneration = generation;
-    let imported;
-    try { imported = normalize(JSON.parse(await file.text())); }
-    catch { return message('This file is not a valid JSON backup.', true); }
-    if (sessionEpoch !== epoch || generation !== localGeneration) return message('The list changed while reading the backup. Please try again.', true);
-    if (!confirm('Import this backup as a new local list? Export your current list first if needed.')) return;
-    data = normalize({ ...documentOf(imported), username: data.username, owner: data.username,
-        members: data.username ? [data.username] : [] });
-    epoch++; generation++; blocked = false; clearTimeout(saveTimer); saving = false;
-    persist(); render(); $('sharedListSelect').value = ''; $('syncStatus').textContent = ''; message('Backup imported as a local list.');
+$('importInput').addEventListener('change', guard(async e => {
+    const file = e.target.files[0]; e.target.value = ''; if (!file) return;
+    if (file.size > 1000000) return status('settingsStatus','Backup too large',{},true);
+    const sessionEpoch = epoch, localGeneration = generation; let imported;
+    try { const raw = JSON.parse(await file.text()); if (!raw || !Array.isArray(raw.markets)) throw Error(); imported = normalize(raw); } catch { return status('settingsStatus','Invalid backup',{},true); }
+    if (sessionEpoch !== epoch || generation !== localGeneration) return status('appStatus','Changed while loading',{},true);
+    if (!confirm(t('Confirm import'))) return;
+    epoch++; generation++; clearTimeout(saveTimer); saving = false; creating = null; blocked = false;
+    data = normalize({ ...documentOf(imported), username: user?.name || '' }); activeMarket = ''; guestMode = !user;
+    persist(); render(); renderListOptions(); $('settingsDialog').close(); status('appStatus','Backup imported');
 }));
-window.addEventListener('online', () => sync());
-window.addEventListener('storage', event => {
-    if (event.key === storage.key(user?.id)) message('This list changed in another tab. Export unsynced edits before refreshing.', true);
-});
 async function poll() {
-    if (!user || !cloudReady || !data.listId || data.dirty || saving || document.hidden || $('addMarketForm').hidden === false) return;
-    if (['INPUT', 'SELECT'].includes(document.activeElement?.tagName) || document.querySelector('.inline-edit')) return;
-    const sessionEpoch = epoch, listId = data.listId, revision = data.version, localGeneration = generation;
+    if (document.hidden || authBusy) return;
+    if (!cloud.available || !user) { try { await transition(await cloud.session()); } catch { /* Preserve local mode until connectivity returns. */ } return; }
+    if (!cloudReady || data.dirty || saving || creating || ['INPUT','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('.inline-edit')) return;
+    const sessionEpoch = epoch, id = data.listId, revision = data.version, localGeneration = generation;
     try {
-        const record = await cloud.list(listId);
-        if (sessionEpoch !== epoch || data.listId !== listId || data.dirty || generation !== localGeneration) return;
-        if (record.version !== revision) await openList(listId);
-        else {
-            const members = await cloud.members(listId);
-            if (sessionEpoch !== epoch || data.listId !== listId || data.dirty || generation !== localGeneration) return;
-            const names = members.map(member => member.username);
-            const owner = members.find(member => member.role === 'owner')?.username || '';
-            if (JSON.stringify(names) !== JSON.stringify(data.members) || owner !== data.owner) {
-                data.members = names; data.owner = owner; persist(); render();
-            }
-        }
-    } catch { $('syncStatus').textContent = 'Connection unavailable. Local editing is still available.'; }
+        await refreshLists(); if (!id) return;
+        const record = await cloud.list(id); if (sessionEpoch !== epoch || id !== data.listId || data.dirty || generation !== localGeneration) return;
+        if (record.version !== revision) await openList(id);
+    } catch (error) { fail(error,'syncStatus'); }
 }
-render();
-cloud.session().then(transition).catch(() => {
-    $('authStatus').textContent = 'Local mode. To share lists, run the BuyMe server (see README).'; render();
-});
-window.addEventListener('storage', event => {
-    if (event.key === 'buyme:session') cloud.session().then(transition).catch(() => {});
-});
-setInterval(poll, 10000);
+window.addEventListener('online', () => { if (user && cloudReady) saveToAccount().catch(fail); else poll(); });
+window.addEventListener('storage', e => { if (e.key === storage.key(user?.id)) status('appStatus','Other tab changed',{},true); if (e.key === 'buyme:session') cloud.session().then(transition).catch(() => {}); });
+applyPreferences();
+cloud.session().then(transition).catch(() => { status('authStatus','Server offline'); render(); });
+setInterval(poll,10000);

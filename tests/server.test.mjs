@@ -12,9 +12,9 @@ async function start(t, dbPath = ':memory:') {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const call = async (path, method = 'GET', body, cookie) => {
         const res = await fetch(origin+path,{method,headers:{...(body===undefined?{}:{'Content-Type':'application/json',Origin:origin}),...(cookie?{Cookie:cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-        return {status:res.status,body:await res.json(),cookie:res.headers.get('set-cookie')?.split(';')[0]};
+        return {status:res.status,body:await res.json(),setCookie:res.headers.get('set-cookie'),cookie:res.headers.get('set-cookie')?.split(';')[0]};
     };
-    const signup = async username => { const result=await call('/api/signup','POST',{username,password:'password-123'}); assert.equal(result.status,201);return result; };
+    const signup = async username => { const result=await call('/api/signup','POST',{email:`${username}@example.com`,name:username,password:'password-123'}); assert.equal(result.status,201);return result; };
     return {origin,call,signup,server};
 }
 const doc = name => ({listName:name,location:'Rotterdam',markets:[{id:'m',name:'Lidl',products:[{id:'p',name:'Milk',status:'pending'}]}]});
@@ -24,15 +24,15 @@ test('authentication, sharing permissions, optimistic conflicts and durable edit
     const alice=await signup('alice'),bob=await signup('bob'),carol=await signup('carol');
     assert.match(alice.cookie,/buyme_session=/);
     assert.equal((await call('/api/lists')).status,401);
-    assert.equal((await call('/api/login','POST',{username:'alice',password:'wrong-password'})).status,401);
+    assert.equal((await call('/api/login','POST',{email:'alice@example.com',password:'wrong-password'})).status,401);
     const created=await call('/api/lists','POST',{document:doc('Weekly')},alice.cookie);
     assert.equal(created.status,201); const id=created.body.id;
     assert.equal((await call(`/api/lists/${id}`,'GET',undefined,bob.cookie)).status,404);
-    assert.equal((await call(`/api/lists/${id}/members`,'POST',{username:'bob'},alice.cookie)).status,200);
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{email:'bob@example.com'},alice.cookie)).status,200);
     assert.equal((await call('/api/lists','GET',undefined,bob.cookie)).body.length,1);
     const shared=await call(`/api/lists/${id}`,'GET',undefined,bob.cookie);
     assert.equal(shared.body.document.listName,'Weekly');
-    assert.equal((await call(`/api/lists/${id}/members`,'POST',{username:'carol'},bob.cookie)).status,403);
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{email:'carol@example.com'},bob.cookie)).status,403);
     const changed=doc('Saturday'); changed.markets[0].products[0].status='purchased';
     const saved=await call(`/api/lists/${id}`,'PUT',{document:changed,version:shared.body.version},bob.cookie);
     assert.equal(saved.status,200);
@@ -51,7 +51,7 @@ test('cross-origin writes and private filesystem paths are rejected', async t =>
     assert.equal(evil.status,403);
     for(const path of ['/data/buyme.sqlite','/.git/config','/server.mjs']) assert.equal((await fetch(origin+path)).status,404);
     const home=await fetch(origin+'/');assert.equal(home.status,200);assert(home.headers.get('content-security-policy').includes("script-src 'self'"));
-    const duplicate=await fetch(origin+'/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'alice',password:'other-pass-123'})});
+    const duplicate=await fetch(origin+'/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'alice@example.com',password:'other-pass-123'})});
     assert.equal(duplicate.status,409);
 });
 test('SQLite data and session survive restarting the server', async t => {
@@ -59,7 +59,7 @@ test('SQLite data and session survive restarting the server', async t => {
     const path=join(directory,'app.sqlite');
     const first=createApp({dbPath:path});first.listen(0,'127.0.0.1');await once(first,'listening');
     const base=`http://127.0.0.1:${first.address().port}`;
-    const auth=await fetch(base+'/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'alice',password:'password-123'})});
+    const auth=await fetch(base+'/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'alice@example.com',name:'alice',password:'password-123'})});
     const cookie=auth.headers.get('set-cookie').split(';')[0];
     await fetch(base+'/api/lists',{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify({document:doc('Persistent')})});
     await new Promise(resolve=>first.close(resolve));
@@ -78,4 +78,44 @@ test('live SQLite backup restores accounts and lists on another server', async t
     const restored=await start(t,backup);
     const lists=await restored.call('/api/lists','GET',undefined,user.cookie);
     assert.equal(lists.status,200);assert.equal(lists.body[0].document.listName,'Portable list');
+});
+test('email sharing remembers private contacts, rejects ambiguous names and permits unnamed lists', async t => {
+    const {call,signup}=await start(t);
+    const owner=await signup('owner'),ayse=await signup('ayse'),other=await signup('other');
+    const created=await call('/api/lists','POST',{document:doc('')},owner.cookie);assert.equal(created.status,201);
+    const id=created.body.id;
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{email:'AYSE@EXAMPLE.COM',alias:'Ayşe'},owner.cookie)).status,200);
+    let contacts=(await call('/api/contacts','GET',undefined,owner.cookie)).body;
+    assert.equal(contacts.length,1);assert.equal(contacts[0].name,'Ayşe');assert.equal(contacts[0].email,'ayse@example.com');
+    assert.deepEqual((await call('/api/contacts','GET',undefined,ayse.cookie)).body,[]);
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{name:'Ayşe'},owner.cookie)).status,200);
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{email:'other@example.com',alias:'Ayşe'},owner.cookie)).status,200);
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{name:'Ayşe'},owner.cookie)).body.code,'CONTACT_AMBIGUOUS');
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{contactId:contacts[0].id},other.cookie)).status,403);
+    assert.equal((await call(`/api/lists/${id}/members`,'POST',{email:'missing@example.com'},owner.cookie)).body.code,'CONTACT_NOT_FOUND');
+    assert.equal((await call('/api/signup','POST',{email:'OWNER@example.com',password:'password-123'})).status,409);
+    const auth=await call('/api/login','POST',{email:'OWNER@EXAMPLE.COM',password:'password-123'});assert.equal(auth.status,200);
+    const session=await call('/api/session','GET',undefined,auth.cookie);assert.equal(session.body.user.email,'owner@example.com');assert.match(session.cookie,/buyme_session=/);assert.match(session.setCookie,/HttpOnly/);assert.match(session.setCookie,/Max-Age=7776000/);
+});
+test('old database migrates without losing accounts, sessions, lists or memberships', async t => {
+    const {DatabaseSync}=await import('node:sqlite');const {scryptSync,createHash}=await import('node:crypto');
+    const directory=mkdtempSync(join(tmpdir(),'buyme-legacy-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+    const path=join(directory,'legacy.sqlite'),db=new DatabaseSync(path);
+    db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY, username TEXT UNIQUE COLLATE NOCASE, salt TEXT,password_hash TEXT);
+      CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT,expires INTEGER);
+      CREATE TABLE lists(id TEXT PRIMARY KEY,owner_id TEXT,document TEXT,version INTEGER,updated_at INTEGER);
+      CREATE TABLE members(list_id TEXT,user_id TEXT,PRIMARY KEY(list_id,user_id));`);
+    db.prepare('INSERT INTO users VALUES(?,?,?,?)').run('legacy-id','zeki','salt',scryptSync('password-123','salt',64).toString('hex'));
+    const token='a'.repeat(64);db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(createHash('sha256').update(token).digest('hex'),'legacy-id',Date.now()+60000);
+    db.prepare('INSERT INTO lists VALUES(?,?,?,?,?)').run('old-list','legacy-id',JSON.stringify(doc('Old list')),3,Date.now());
+    db.prepare('INSERT INTO members VALUES(?,?)').run('old-list','legacy-id');db.close();
+    const {call}=await start(t,path),cookie=`buyme_session=${token}`;
+    assert.equal((await call('/api/session','GET',undefined,cookie)).body.user.name,'zeki');
+    assert.equal((await call('/api/lists','GET',undefined,cookie)).body[0].document.listName,'Old list');
+    assert.equal((await call('/api/login','POST',{username:'zeki',password:'password-123'})).status,200);
+    assert.equal((await call('/api/profile','PATCH',{name:'Zeki',email:'zeki@example.com',password:'wrong-pass'},cookie)).status,401);
+    const updated=await call('/api/profile','PATCH',{name:'Zeki',email:'zeki@example.com',password:'password-123'},cookie);assert.equal(updated.status,200);
+    assert.equal(updated.body.id,'legacy-id');assert.equal(updated.body.email,'zeki@example.com');
+    const login=await call('/api/login','POST',{email:'zeki@example.com',password:'password-123'});assert.equal(login.status,200);
+    assert.equal((await call('/api/lists','GET',undefined,login.cookie)).body[0].version,3);
 });

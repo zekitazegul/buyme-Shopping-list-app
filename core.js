@@ -16,7 +16,7 @@
             listId: text(raw.listId), legacyListId: text(raw.legacyListId),
             username: text(raw.username), owner: text(raw.owner), ownerId: text(raw.ownerId),
             version: Number.isSafeInteger(raw.version) && raw.version >= 0 ? raw.version : 0,
-            dirty: raw.dirty === true, listName: text(raw.listName).trim() || 'My Shopping List',
+            dirty: raw.dirty === true, listName: text(raw.listName).trim(),
             location: text(raw.location), members: Array.isArray(raw.members)
                 ? [...new Set(raw.members.filter(m => typeof m === 'string' && m.trim()))] : [],
             markets: (Array.isArray(raw.markets) ? raw.markets : []).filter(m => m && typeof m === 'object').map(m => ({
@@ -53,7 +53,8 @@
             catch (error) { this.onError(error); return false; }
         }
     }
-    const api = { normalize, documentOf, Storage, createId: id, statuses };
+    const searchText = value => String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replaceAll('ı', 'i');
+    const api = { searchText, normalize, documentOf, Storage, createId: id, statuses };
     if (typeof module !== 'undefined') module.exports = api;
     root.BuyMeCore = api;
 })(globalThis);

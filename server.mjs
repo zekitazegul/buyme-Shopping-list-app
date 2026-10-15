@@ -12,10 +12,16 @@ class ApiError extends Error {
     constructor(status, message, code = 'REQUEST_ERROR') { super(message); this.status = status; this.code = code; }
 }
 function check(condition, status, message, code) { if (!condition) throw new ApiError(status, message, code); }
-function usernameOf(value) {
-    check(typeof value === 'string' && /^[a-z0-9_.-]{3,40}$/i.test(value.trim()), 400, 'Use 3–40 letters, numbers, dots, dashes or underscores for the account username.');
+function emailOf(value) {
+    check(typeof value === 'string' && value.trim().length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()), 400, 'EMAIL_INVALID', 'EMAIL_INVALID');
     return value.trim().toLowerCase();
 }
+function displayNameOf(value) {
+    check(typeof value === 'string' && value.trim().length >= 1 && value.trim().length <= 80, 400, 'NAME_INVALID', 'NAME_INVALID');
+    return value.trim();
+}
+const publicUser = row => ({ id: row.id, username: row.username, email: row.email, name: row.display_name || row.username });
+const sessionSeconds = 90 * 24 * 60 * 60;
 function documentOf(raw) {
     check(raw && typeof raw === 'object' && !Array.isArray(raw), 400, 'Invalid list.');
     const text = (value, required = true) => {
@@ -34,7 +40,7 @@ function documentOf(raw) {
             return { id: id(p.id, 'product'), name: text(p.name), status: p.status };
         }) };
     });
-    return { listName: text(raw.listName), location: text(raw.location ?? '', false), markets };
+    return { listName: text(raw.listName ?? '', false), location: text(raw.location ?? '', false), markets };
 }
 export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data/buyme.sqlite'), secureCookies = false, publicOrigin = process.env.PUBLIC_ORIGIN || '' } = {}) {
     if (dbPath !== ':memory:') mkdirSync(dirname(resolve(dbPath)), { recursive: true });
@@ -45,6 +51,14 @@ export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data
       CREATE TABLE IF NOT EXISTS lists(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), document TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS members(list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(list_id,user_id));
       CREATE INDEX IF NOT EXISTS members_user ON members(user_id);`);
+    // Additive migration: preserve existing accounts, sessions and lists.
+    const columns = new Set(db.prepare('PRAGMA table_info(users)').all().map(c => c.name));
+    if (!columns.has('email')) db.exec('ALTER TABLE users ADD COLUMN email TEXT COLLATE NOCASE');
+    if (!columns.has('display_name')) db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS contacts(owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        contact_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, alias TEXT NOT NULL,
+        PRIMARY KEY(owner_id,contact_id));`);
     const stmt = sql => db.prepare(sql);
     const rate = new Map();
     const transaction = action => {
@@ -55,7 +69,8 @@ export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data
     const tokenOf = req => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith('buyme_session='))?.slice(14);
     const sessionUser = req => {
         const token = tokenOf(req); if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-        return stmt('SELECT u.id,u.username FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires>?').get(digest(token), Date.now()) || null;
+        const row = stmt('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires>?').get(digest(token), Date.now());
+        return row ? publicUser(row) : null;
     };
     const auth = req => { const user = sessionUser(req); check(user, 401, 'Please log in.', 'UNAUTHORIZED'); return user; };
     const accessible = (id, user) => {
@@ -63,11 +78,11 @@ export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data
         check(row, 404, 'List not found.'); return row;
     };
     const record = row => ({ id: row.id, owner_id: row.owner_id, document: JSON.parse(row.document), version: row.version, updated_at: row.updated_at });
-    const cookie = (res, token, maxAge = 604800) => res.setHeader('Set-Cookie', `buyme_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`);
+    const cookie = (res, token, maxAge = sessionSeconds) => res.setHeader('Set-Cookie', `buyme_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secureCookies ? '; Secure' : ''}`);
     const newSession = (res, user) => {
         const token = randomBytes(32).toString('hex');
         stmt('DELETE FROM sessions WHERE expires<=?').run(Date.now());
-        stmt('INSERT INTO sessions VALUES(?,?,?)').run(digest(token), user.id, Date.now() + 604800000);
+        stmt('INSERT INTO sessions VALUES(?,?,?)').run(digest(token), user.id, Date.now() + sessionSeconds * 1000);
         cookie(res, token);
     };
     const bodyOf = async req => {
@@ -86,7 +101,7 @@ export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data
             const url = new URL(req.url, 'http://localhost');
             if (!url.pathname.startsWith('/api/')) {
                 check(['GET', 'HEAD'].includes(req.method), 405, 'Method not allowed.');
-                const files = { '/': ['index.html','text/html'], '/index.html': ['index.html','text/html'], '/app.js':['app.js','text/javascript'], '/core.js':['core.js','text/javascript'], '/cloud.js':['cloud.js','text/javascript'], '/style.css':['style.css','text/css'] };
+                const files = { '/': ['index.html','text/html'], '/index.html': ['index.html','text/html'], '/app.js':['app.js','text/javascript'], '/core.js':['core.js','text/javascript'], '/cloud.js':['cloud.js','text/javascript'], '/i18n.js':['i18n.js','text/javascript'], '/style.css':['style.css','text/css'] };
                 const asset = files[url.pathname]; check(asset, 404, 'Not found.');
                 res.writeHead(200, { 'Content-Type': `${asset[1]}; charset=utf-8`, 'Cache-Control': 'no-cache' });
                 return res.end(req.method === 'HEAD' ? undefined : readFileSync(resolve(root, asset[0])));
@@ -95,36 +110,57 @@ export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data
                 const origin = req.headers.origin;
                 check(!origin || origin === (publicOrigin || `http://${req.headers.host}`), 403, 'Cross-origin action refused.');
             }
-            if (url.pathname === '/api/session' && req.method === 'GET') return response(res, 200, { user: sessionUser(req) });
+            if (url.pathname === '/api/session' && req.method === 'GET') {
+                const user = sessionUser(req);
+                if (user) {
+                    stmt('UPDATE sessions SET expires=? WHERE token_hash=?').run(Date.now() + sessionSeconds * 1000, digest(tokenOf(req)));
+                    cookie(res, tokenOf(req));
+                }
+                return response(res, 200, { user });
+            }
             if (['/api/signup','/api/login'].includes(url.pathname) && req.method === 'POST') {
                 const key = req.socket.remoteAddress || 'local'; const now = Date.now();
                 const attempts = (rate.get(key) || []).filter(t => now-t < 900000);
                 check(attempts.length < 30, 429, 'Too many sign-in attempts. Try again later.');
                 attempts.push(now); rate.set(key, attempts);
                 if (rate.size > 10000) for (const [ip, times] of rate) if (times.every(t => now-t>=900000)) rate.delete(ip);
-                const body = await bodyOf(req), username = usernameOf(body.username);
-                check(typeof body.password === 'string' && body.password.length >= 8 && body.password.length <= 200, 400, 'Use a password with 8–200 characters.');
+                const body = await bodyOf(req);
+                check(typeof body.password === 'string' && body.password.length >= 8 && body.password.length <= 200, 400, 'PASSWORD_LENGTH', 'PASSWORD_LENGTH');
                 if (url.pathname === '/api/signup') {
+                    const email = emailOf(body.email), name = displayNameOf(body.name || email.split('@')[0]);
                     const salt = randomBytes(16).toString('hex'), hash = await scrypt(body.password, salt, 64);
-                    const user = { id: randomUUID(), username };
-                    try { stmt('INSERT INTO users VALUES(?,?,?,?)').run(user.id, username, salt, hash.toString('hex')); }
-                    catch (error) { if (String(error.message).includes('UNIQUE')) throw new ApiError(409, 'That account username is taken.'); throw error; }
+                    const id = randomUUID(), username = `account-${id}`;
+                    try { stmt('INSERT INTO users(id,username,salt,password_hash,email,display_name) VALUES(?,?,?,?,?,?)').run(id,username,salt,hash.toString('hex'),email,name); }
+                    catch (error) { if (String(error.message).includes('UNIQUE')) throw new ApiError(409, 'EMAIL_TAKEN', 'EMAIL_TAKEN'); throw error; }
+                    const user = publicUser(stmt('SELECT * FROM users WHERE id=?').get(id));
                     newSession(res,user); return response(res,201,{user});
                 }
-                const found = stmt('SELECT * FROM users WHERE username=?').get(username);
+                // Legacy usernames remain usable so an existing account can add an email.
+                const identity = String(body.email || body.username || '').trim().toLowerCase();
+                const found = identity.includes('@') ? stmt('SELECT * FROM users WHERE email=?').get(identity) : stmt('SELECT * FROM users WHERE username=?').get(identity);
                 const hash = await scrypt(body.password, found?.salt || '00000000000000000000000000000000', 64);
-                check(found && timingSafeEqual(hash, Buffer.from(found.password_hash,'hex')),401,'Invalid username or password.');
-                const user = { id: found.id, username: found.username }; newSession(res,user); return response(res,200,{user});
+                check(found && timingSafeEqual(hash, Buffer.from(found.password_hash,'hex')),401,'LOGIN_INVALID','LOGIN_INVALID');
+                const user = publicUser(found); newSession(res,user); return response(res,200,{user});
             }
             const user = auth(req);
             if (url.pathname === '/api/logout' && req.method === 'POST') {
                 await bodyOf(req); stmt('DELETE FROM sessions WHERE token_hash=?').run(digest(tokenOf(req))); cookie(res,'',0); return response(res,200,{ok:true});
             }
             if (url.pathname === '/api/profile' && req.method === 'PATCH') {
-                const username = usernameOf((await bodyOf(req)).username);
-                try { stmt('UPDATE users SET username=? WHERE id=?').run(username,user.id); }
-                catch (error) { if (String(error.message).includes('UNIQUE')) throw new ApiError(409,'That account username is taken.'); throw error; }
-                return response(res,200,{id:user.id,username});
+                const body = await bodyOf(req), name = displayNameOf(body.name);
+                const email = body.email === undefined ? user.email : emailOf(body.email);
+                if (email !== user.email) {
+                    const found = stmt('SELECT salt,password_hash FROM users WHERE id=?').get(user.id);
+                    check(typeof body.password === 'string' && body.password.length <= 200,400,'PASSWORD_REQUIRED','PASSWORD_REQUIRED');
+                    const hash = await scrypt(body.password,found.salt,64);
+                    check(timingSafeEqual(hash,Buffer.from(found.password_hash,'hex')),401,'LOGIN_INVALID','LOGIN_INVALID');
+                }
+                try { stmt('UPDATE users SET display_name=?,email=? WHERE id=?').run(name,email,user.id); }
+                catch (error) { if (String(error.message).includes('UNIQUE')) throw new ApiError(409,'EMAIL_TAKEN','EMAIL_TAKEN'); throw error; }
+                return response(res,200,publicUser(stmt('SELECT * FROM users WHERE id=?').get(user.id)));
+            }
+            if (url.pathname === '/api/contacts' && req.method === 'GET') {
+                return response(res,200,stmt('SELECT u.id,u.email,c.alias AS name FROM contacts c JOIN users u ON u.id=c.contact_id WHERE c.owner_id=? ORDER BY c.alias').all(user.id));
             }
             if (url.pathname === '/api/lists' && req.method === 'GET') {
                 return response(res,200,stmt('SELECT l.* FROM lists l JOIN members m ON m.list_id=l.id WHERE m.user_id=? ORDER BY l.updated_at DESC').all(user.id).map(record));
@@ -142,11 +178,22 @@ export function createApp({ dbPath = process.env.BUYME_DB || resolve(root, 'data
             check(match,404,'Not found.');
             const id=match[1], row=accessible(id,user);
             if (match[2]) {
-                if (req.method==='GET') return response(res,200,stmt("SELECT u.id,u.username,CASE WHEN u.id=? THEN 'owner' ELSE 'member' END role FROM members m JOIN users u ON u.id=m.user_id WHERE m.list_id=? ORDER BY role DESC,u.username").all(row.owner_id,id));
+                if (req.method==='GET') return response(res,200,stmt("SELECT u.id,u.username,COALESCE(u.display_name,u.username) name,CASE WHEN u.id=? THEN 'owner' ELSE 'member' END role FROM members m JOIN users u ON u.id=m.user_id WHERE m.list_id=? ORDER BY role DESC,u.username").all(row.owner_id,id));
                 check(req.method==='POST',405,'Method not allowed.'); check(row.owner_id===user.id,403,'Only the owner can add members.');
-                const username=usernameOf((await bodyOf(req)).username), target=stmt('SELECT id FROM users WHERE username=?').get(username);
-                check(target,404,'No account with that username. Ask the person to register on this BuyMe server first.');
+                const body = await bodyOf(req);
+                let target;
+                if (body.contactId) target = stmt('SELECT u.id FROM contacts c JOIN users u ON u.id=c.contact_id WHERE c.owner_id=? AND c.contact_id=?').get(user.id,body.contactId);
+                else if (body.email) target = stmt('SELECT id FROM users WHERE email=?').get(emailOf(body.email));
+                else if (body.name) {
+                    const matches = stmt('SELECT contact_id AS id FROM contacts WHERE owner_id=? AND alias=? COLLATE NOCASE').all(user.id,displayNameOf(body.name));
+                    check(matches.length <= 1,400,'CONTACT_AMBIGUOUS','CONTACT_AMBIGUOUS'); target = matches[0];
+                }
+                check(target,404,'CONTACT_NOT_FOUND','CONTACT_NOT_FOUND');
+                const targetUser = stmt('SELECT * FROM users WHERE id=?').get(target.id);
+                const previousContact = stmt('SELECT alias FROM contacts WHERE owner_id=? AND contact_id=?').get(user.id,target.id);
+                const alias = displayNameOf(body.alias || previousContact?.alias || targetUser.display_name || targetUser.username);
                 transaction(() => {
+                    stmt('INSERT INTO contacts VALUES(?,?,?) ON CONFLICT(owner_id,contact_id) DO UPDATE SET alias=excluded.alias').run(user.id,target.id,alias);
                     const result=stmt('INSERT OR IGNORE INTO members VALUES(?,?)').run(id,target.id);
                     if(result.changes) stmt('UPDATE lists SET version=version+1,updated_at=? WHERE id=?').run(Date.now(),id);
                 });

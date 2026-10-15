@@ -31,34 +31,42 @@ Open `http://COMPUTER_IPV4:3000` on the phone. Allow Node on Windows Firewall's
 Do not expose port 3000 directly to the public internet. LAN HTTP is for trusted
 local testing; passwords and cookies need HTTPS for remote use.
 
-## Local and shared lists
+## Alışveriş akışı ve diller
 
-The main screen includes product/market search, status filters, a shopping
-progress indicator and confirmed bulk removal of purchased items. Account,
-sharing and backup tools are under **Account & sharing**. Product and market
-names can be edited by clicking them; status buttons cycle through pending,
-purchased and not found.
+Arayüz varsayılan olarak Türkçedir. Sağ üstten **Türkçe / English / Nederlands**
+seçilebilir. Menü, düğmeler, yer tutucular, paylaşım ve hata/onay mesajları üç
+dilde güncellenir. Yeni arayüz metinlerini `i18n.js` içinde üç dilde birlikte ekleyin.
 
-- Local lists need no account. Browser storage survives reloads; Export/Import
-  backup provides a portable JSON copy. Clearing browser data deletes local-only
-  lists. Private-mode/storage restrictions are reported, not silently ignored.
-- To share, each person creates an account on **this same BuyMe server**. The
-  account username is 3–40 letters/numbers/dots/underscores/dashes. It is not an
-  email address. Passwords are hashed with scrypt; there is no email/reset service.
-- Log in, build a list and click **Share this list**. Add a registered person's
-  username using **+ Invite**. This grants access immediately; no email is sent.
-- The invited person uses **Load latest**, then selects the list under Shared
-  lists. Products, statuses, market names, list name and location synchronize.
-  Open lists refresh about every 10 seconds while idle. Reload also works manually.
-- Both members may edit; only the owner may add people. Access checks run on the
-  server. Changing a local display name does not grant ownership.
-- Conflicting edits are kept locally and reported. Export them before choosing
-  **Load latest** to replace them. Conflicts are never silently overwritten.
-- Logout switches to the separate local/guest list. Account caches are separate.
-  On shared computers, browser storage may still contain that account's cached
-  data: use separate OS/browser profiles for private local caches.
-- Offline edits to a previously loaded shared list stay on the device; use
-  **Retry sync** when the server returns. Local guest lists are not auto-uploaded.
+1. İlk açılışta **Hesap oluştur** ile ad, e-posta ve şifre girin. Sonraki açılışlarda
+   giriş hatırlanır. Oturum 90 gün geçerlidir; uygulama açılınca bu süre yenilenir.
+   Çıkış yapmak veya tarayıcı verilerini silmek yeniden giriş gerektirir.
+2. Market seçin, ürünleri ekleyin. Hesapla çalışırken değişiklikler otomatik kaydedilir.
+   Birden fazla marketin ürünleri ayrı tutulur. Liste adı isteğe bağlıdır.
+3. **Listeyi paylaş** ile kişinin e-postasını girin. İsterseniz “Ayşe” gibi bir adla
+   hatırlatın. Sonraki paylaşımlarda kayıtlı kişiyi seçin veya adını yazın. Aynı adla
+   birden fazla kişi varsa e-posta ile ayırt edilir.
+4. Alıcının **aynı BuyMe sunucusunda hesabı olması gerekir**. Liste **Listelerim**
+   alanında görünür; boş ekranda **Son halini yükle** ile yenilenebilir. Otomatik
+   kontrol boşta yaklaşık 10 saniyede bir çalışır. Otomatik davet e-postası gönderilmez.
+5. **Ayarlar** içinde tema (açık/koyu/sistem), renk, yazı boyutu, hesap ve yedekler
+   bulunur. Görünüm ve dil tercihleri bu tarayıcıda hatırlanır.
+
+- **Hesapsız, bu cihazda devam et** seçeneği yerel kullanım içindir. Hesap ve yerel
+  listeler ayrı saklanır. Yerel liste hesaba otomatik aktarılmaz; Ayarlar’dan yedek
+  dışa aktarıp giriş yaptıktan sonra içe aktarabilirsiniz. Tarayıcı verilerini
+  silmek yerel listeleri siler. Paylaşılan bilgisayarda ayrı tarayıcı profili kullanın.
+- Eski kullanıcı adı hesapları ve listeleri korunur. Eski kullanıcı adıyla giriş
+  yapın; **Ayarlar → Hesap** altında e-posta ve mevcut şifrenizi girip Kaydet’e basın.
+  Adınızı değiştirmek sahiplik veya yetki kazandırmaz.
+- Şifreler scrypt ile özetlenir; oturum HttpOnly çerezinde tutulur. Bu yerel sunucu
+  e-posta doğrulama veya şifre sıfırlama e-postası göndermez. E-posta doğrulaması
+  eklenmeden güvenilmeyen kişilere açık bir kayıt hizmeti olarak yayımlamayın.
+- Liste sahibi paylaşım yapabilir; üyeler ürünleri düzenleyebilir. Kayıtlı kişiler
+  yalnızca onları kaydeden hesabın önerilerinde görünür.
+- Çakışan değişiklikler cihazda korunur. Son halini yüklemeden önce dışa aktarın;
+  sunucudaki liste sessizce üzerine yazılmaz. Bağlantı kesilince açık listedeki
+  düzenlemeler yerelde kalır; bağlantı gelince **Eşitlemeyi tekrar dene** kullanılabilir.
+- Konum alanı arayüzden kaldırılmıştır. Eski yedeklerdeki konum verisi korunur.
 
 ## Data and migration to another computer
 
